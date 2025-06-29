@@ -1,0 +1,606 @@
+/* CSS Custom Properties */
+:root {
+    /* Light theme colors */
+    --bg-light-primary: #fefefe;
+    --bg-light-secondary: #f8f9fa;
+    --text-light-primary: #2c3e50;
+    --text-light-secondary: #5d6d7e;
+    --accent-light: #3498db;
+    
+    /* Dark theme colors */
+    --bg-dark-primary: #0f0f23;
+    --bg-dark-secondary: #1a1a2e;
+    --text-dark-primary: #eee;
+    --text-dark-secondary: #bbb;
+    --accent-dark: #64b5f6;
+    
+    /* Lamp colors and materials */
+    --lamp-shade-color: #2c3e50;
+    --lamp-shade-inner: #34495e;
+    --lamp-metal: #7f8c8d;
+    --lamp-cord: #34495e;
+    --bulb-off: #f8f9fa;
+    --bulb-on: #fff8dc;
+    --bulb-glow: rgba(255, 248, 220, 0.9);
+    --string-color: #bdc3c7;
+    --handle-color: #e67e22;
+    
+    /* Animations */
+    --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* Theme Application */
+[data-theme="light"] {
+    --bg-primary: var(--bg-light-primary);
+    --bg-secondary: var(--bg-light-secondary);
+    --text-primary: var(--text-light-primary);
+    --text-secondary: var(--text-light-secondary);
+    --accent: var(--accent-light);
+}
+
+[data-theme="dark"] {
+    --bg-primary: var(--bg-dark-primary);
+    --bg-secondary: var(--bg-dark-secondary);
+    --text-primary: var(--text-dark-primary);
+    --text-secondary: var(--text-dark-secondary);
+    --accent: var(--accent-dark);
+}
+
+/* Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition-smooth);
+}
+
+/* Animated Background */
+.background-gradient {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 50%, var(--bg-secondary) 0%, var(--bg-primary) 70%);
+    z-index: -2;
+    transition: var(--transition-smooth);
+}
+
+[data-theme="light"] .background-gradient {
+    background: radial-gradient(circle at 50% 50%, #e3f2fd 0%, var(--bg-primary) 70%);
+}
+
+/* Main Container */
+.container {
+    text-align: center;
+    padding: 2rem;
+    max-width: 600px;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+}
+
+/* App Header */
+.app-header {
+    margin-bottom: 3rem;
+    opacity: 0;
+    animation: fadeInUp 1s ease-out 0.2s forwards;
+}
+
+.app-title {
+    font-size: 2.5rem;
+    font-weight: 600;
+    margin-bottom: 2rem;
+    background: linear-gradient(135deg, var(--accent), var(--text-primary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+}
+
+/* Lamp Container */
+.lamp-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 4rem 0;
+    opacity: 0;
+    animation: fadeInUp 1s ease-out 0.4s forwards;
+}
+
+/* Lamp Container */
+.lamp-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 2rem 0;
+    height: 400px;
+    opacity: 0;
+    animation: fadeInUp 1s ease-out 0.4s forwards;
+}
+
+/* Ceiling Mount */
+.ceiling-mount {
+    position: absolute;
+    top: 0;
+    width: 60px;
+    height: 20px;
+    background: linear-gradient(180deg, var(--lamp-metal), #5d6d7e);
+    border-radius: 10px 10px 2px 2px;
+    box-shadow: 
+        0 2px 10px rgba(0, 0, 0, 0.3),
+        inset 0 1px 3px rgba(255, 255, 255, 0.2);
+    z-index: 10;
+}
+
+.ceiling-mount::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 10px;
+    background: var(--bg-secondary);
+    border-radius: 0 0 5px 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Hanging Cord */
+.hanging-cord {
+    position: absolute;
+    top: 20px;
+    width: 3px;
+    height: 80px;
+    background: linear-gradient(180deg, var(--lamp-cord), #2c3e50);
+    border-radius: 2px;
+    box-shadow: 1px 0 2px rgba(0, 0, 0, 0.3);
+    z-index: 9;
+}
+
+/* Main Hanging Lamp */
+.hanging-lamp {
+    position: relative;
+    top: 100px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    transform-origin: top center;
+    z-index: 5;
+    animation: gentleSway 6s ease-in-out infinite;
+}
+
+.hanging-lamp:hover {
+    transform: scale(1.02);
+    animation-play-state: paused;
+}
+
+.hanging-lamp:focus {
+    outline: none;
+}
+
+/* Material Design Elevation and Surfaces */
+.lamp-shade {
+    position: relative;
+    width: 200px;
+    height: 120px;
+    margin: 0 auto;
+    /* Remove border-radius to eliminate square artifacts */
+    background: transparent;
+    /* No box-shadow on container - let individual components handle shadows */
+}
+
+.shade-top {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 15px;
+    background: linear-gradient(180deg, var(--lamp-metal), #5d6d7e);
+    border-radius: 50% 50% 25% 25%;
+    /* Material elevation 2 */
+    box-shadow: 
+        0 3px 1px -2px rgba(0, 0, 0, 0.2),
+        0 2px 2px 0 rgba(0, 0, 0, 0.14),
+        0 1px 5px 0 rgba(0, 0, 0, 0.12);
+    z-index: 8;
+}
+
+.shade-body {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    width: 100%;
+    height: 100px;
+    background: linear-gradient(180deg, var(--lamp-shade-color), var(--lamp-shade-inner));
+    border-radius: 50% 50% 25% 25%;
+    /* Material elevation 6 - elevated when on */
+    box-shadow: 
+        0 3px 5px -1px rgba(0, 0, 0, 0.2),
+        0 6px 10px 0 rgba(0, 0, 0, 0.14),
+        0 1px 18px 0 rgba(0, 0, 0, 0.12);
+    transition: var(--transition-smooth);
+    /* Ensure no background bleeds through */
+    overflow: hidden;
+}
+
+.shade-bottom {
+    position: absolute;
+    bottom: 5px;
+    left: 10%;
+    width: 80%;
+    height: 8px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    border-radius: 50%;
+}
+
+/* Light Bulb Inside Shade */
+.light-bulb {
+    position: absolute;
+    top: 35px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 45px;
+    z-index: 6;
+}
+
+.bulb-base {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 15px;
+    background: var(--lamp-metal);
+    border-radius: 2px;
+}
+
+.bulb-glass {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 32px;
+    background: var(--bulb-off);
+    border-radius: 50% 50% 20% 20%;
+    box-shadow: 
+        inset 0 2px 8px rgba(255, 255, 255, 0.3),
+        inset 0 -2px 8px rgba(0, 0, 0, 0.1);
+    transition: var(--transition-smooth);
+}
+
+.bulb-filament {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px;
+    height: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+    opacity: 0.3;
+    transition: var(--transition-smooth);
+}
+
+/* Light Glow Effect */
+.light-glow {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 180px;
+    height: 180px;
+    background: radial-gradient(circle, var(--bulb-glow), transparent 70%);
+    border-radius: 50%;
+    opacity: 0;
+    transition: var(--transition-smooth);
+    pointer-events: none;
+    filter: blur(15px);
+    z-index: 4;
+}
+
+/* Pull String - Single SVG Curved String (Spaghetti-like) */
+.pull-string-container {
+    position: absolute;
+    bottom: -140px; /* Moved further down to accommodate handle */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    height: 140px; /* Increased height */
+    width: 120px;
+    pointer-events: none;
+}
+
+.string-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 105px; /* Increased to accommodate handle */
+    pointer-events: auto;
+    cursor: grab;
+    overflow: visible;
+}
+
+.string-svg:active {
+    cursor: grabbing;
+}
+
+.string-path {
+    filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.3));
+    transition: stroke 0.2s ease;
+}
+
+.string-svg:hover .string-path {
+    stroke: #ecf0f1;
+}
+
+.string-highlight {
+    pointer-events: none;
+}
+
+/* SVG Handle Styling */
+.string-handle-svg {
+    cursor: grab;
+    filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3));
+    transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.string-handle-svg:hover {
+    filter: drop-shadow(3px 3px 8px rgba(255, 107, 53, 0.5));
+}
+
+.string-handle-svg:active,
+.string-handle-svg.dragging {
+    cursor: grabbing;
+    filter: drop-shadow(1px 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+
+
+.string-body:hover {
+    background: linear-gradient(to bottom, 
+        #95a5a6 0%, 
+        #ecf0f1 20%, 
+        #ecf0f1 80%, 
+        #bdc3c7 100%);
+    box-shadow: 
+        2px 0 4px rgba(0, 0, 0, 0.3),
+        -1px 0 2px rgba(255, 255, 255, 0.15),
+        inset 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.string-body.dragging {
+    transition: none;
+    cursor: grabbing;
+}
+
+/* Material Design Enhanced Lamp On State */
+.hanging-lamp.on .shade-body {
+    /* Material elevation 8 - highest elevation when illuminated */
+    box-shadow: 
+        0 5px 5px -3px rgba(255, 248, 220, 0.4),
+        0 8px 10px 1px rgba(255, 248, 220, 0.2),
+        0 3px 14px 2px rgba(255, 248, 220, 0.12),
+        0 12px 40px rgba(255, 248, 220, 0.3);
+    background: linear-gradient(180deg, #455a64, #37474f);
+}
+
+.hanging-lamp.on .bulb-glass {
+    background: var(--bulb-on);
+    /* Material glow effect */
+    box-shadow: 
+        0 0 20px rgba(255, 248, 220, 0.8),
+        0 0 40px rgba(255, 248, 220, 0.4),
+        inset 0 2px 8px rgba(255, 255, 255, 0.4),
+        inset 0 -2px 8px rgba(255, 248, 220, 0.2);
+}
+
+.hanging-lamp.on .bulb-filament {
+    opacity: 0.8;
+    border-color: rgba(255, 200, 0, 0.8);
+    box-shadow: 0 0 4px rgba(255, 200, 0, 0.4);
+}
+
+.hanging-lamp.on .light-glow {
+    opacity: 1;
+}
+
+/* String Animation States - SVG based */
+.string-svg.pulling {
+    transform: scale(1.02);
+}
+
+.string-svg.dragging {
+    cursor: grabbing !important;
+}
+
+/* Enhanced SVG string effects */
+.string-path {
+    transition: stroke-width 0.2s ease;
+}
+
+.string-svg:hover .string-path {
+    stroke-width: 3.5;
+}
+
+/* Particles Effect */
+.particles {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 50%;
+    opacity: 0.7;
+    animation: float 3s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.7;
+    }
+    50% {
+        transform: translateY(-20px) scale(1.2);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+@keyframes gentleSway {
+    0%, 100% {
+        transform: rotate(0deg);
+    }
+    25% {
+        transform: rotate(1deg);
+    }
+    75% {
+        transform: rotate(-1deg);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+    
+    .app-title {
+        font-size: 2rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .lamp-container {
+        height: 320px;
+    }
+    
+    .hanging-lamp {
+        top: 80px;
+    }
+    
+    .lamp-shade {
+        width: 160px;
+        height: 100px;
+    }
+    
+    .shade-body {
+        height: 85px;
+    }
+    
+    .light-glow {
+        width: 140px;
+        height: 140px;
+    }
+    
+    .pull-string {
+        height: 45px;
+    }
+}
+
+@media (max-width: 480px) {
+    .app-title {
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+    }
+    
+    .lamp-container {
+        height: 280px;
+    }
+    
+    .hanging-lamp {
+        top: 70px;
+    }
+    
+    .lamp-shade {
+        width: 130px;
+        height: 80px;
+    }
+    
+    .shade-body {
+        height: 70px;
+    }
+    
+    .light-glow {
+        width: 110px;
+        height: 110px;
+    }
+    
+    .pull-string {
+        height: 35px;
+    }
+    
+    .string-handle {
+        width: 10px;
+        height: 14px;
+    }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .lamp-shade {
+        border: 3px solid var(--text-primary);
+    }
+}
