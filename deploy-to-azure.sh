@@ -63,7 +63,7 @@ prompt_with_default() {
     local default="$2"
     local variable_name="$3"
     
-    read -p "$(echo -e "${BLUE}${prompt}${NC} [${GREEN}${default}${NC}]: ")" value
+    read -r -p "$(echo -e "${BLUE}${prompt}${NC} [${GREEN}${default}${NC}]: ")"
     eval "$variable_name=\"\${value:-\$default}\""
 }
 
