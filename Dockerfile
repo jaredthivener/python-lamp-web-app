@@ -15,7 +15,7 @@ RUN apk add --no-cache --virtual .build-deps \
         ca-certificates
 
 # Copy and install Python dependencies
-COPY requirements.txt /tmp/requirements.txt
+COPY src/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip==24.3.1 && \
     pip install --no-cache-dir --user -r /tmp/requirements.txt && \
     find /root/.local -depth \
