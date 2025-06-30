@@ -49,7 +49,28 @@ lamp_web_app/
 
 ## ☁️ Azure App Service Deployment
 
-Deploy your lamp web app to Azure App Service using the free tier with these step-by-step instructions:
+Deploy your lamp web app to Azure App Service using our automated deployment script that follows Azure best practices.
+
+### 🚀 Quick Deployment (Recommended)
+
+Use our robust deployment script that handles everything automatically:
+
+```bash
+# Make script executable and run
+chmod +x deploy-to-azure.sh
+./deploy-to-azure.sh
+```
+
+The script will:
+- ✅ Validate prerequisites (Azure CLI, Docker)
+- ✅ Prompt for configuration with sensible defaults
+- ✅ Create all required Azure resources
+- ✅ Build and push your Docker image
+- ✅ Configure system-managed identity for secure ACR access
+- ✅ Set up ACR webhook for continuous deployment
+- ✅ Enable HTTPS-only and container logging
+- ✅ Verify deployment and provide health checks
+- ✅ Show cleanup commands and useful management tips
 
 ### Prerequisites
 
@@ -66,13 +87,20 @@ Deploy your lamp web app to Azure App Service using the free tier with these ste
    az login
    ```
 
+3. **Ensure Docker is running:**
+   - Install and start Docker Desktop
+
+### 🔧 Manual Deployment (Advanced Users)
+
+If you prefer manual control, here are the individual steps:
+
 ### Step 1: Create Azure Resources
 
 ```bash
 # Set variables (customize these values)
 RESOURCE_GROUP="lamp-app-rg"
 APP_NAME="lamp-web-app-$(date +%s)"  # Unique name with timestamp
-LOCATION="eastus"  # Choose a region close to you
+LOCATION="eastus2"  # Choose a region close to you
 ACR_NAME="lampappregistry$(date +%s)"  # Must be globally unique
 
 # Create resource group
@@ -91,23 +119,32 @@ az appservice plan create \
   --sku F1 \
   --is-linux
 
-# Create User-Assigned Managed Identity for secure ACR access
-az identity create \
+# Create Web App
+az webapp create \
   --resource-group $RESOURCE_GROUP \
-  --name "${APP_NAME}-identity"
+  --plan "${APP_NAME}-plan" \
+  --name $APP_NAME \
+  --deployment-container-image-name ${ACR_NAME}.azurecr.io/lamp-app:latest
+```
 
-# Get the managed identity details
-IDENTITY_ID=$(az identity show --resource-group $RESOURCE_GROUP --name "${APP_NAME}-identity" --query id --output tsv)
-PRINCIPAL_ID=$(az identity show --resource-group $RESOURCE_GROUP --name "${APP_NAME}-identity" --query principalId --output tsv)
+### Step 2: Configure System-Managed Identity
 
-# Assign AcrPull role to the managed identity for secure container access
+```bash
+# Enable system-managed identity for the Web App
+PRINCIPAL_ID=$(az webapp identity assign \
+  --resource-group $RESOURCE_GROUP \
+  --name $APP_NAME \
+  --query principalId \
+  --output tsv)
+
+# Assign AcrPull role to the system-managed identity for secure ACR access
 az role assignment create \
   --assignee $PRINCIPAL_ID \
   --scope $(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query id --output tsv) \
   --role AcrPull
 ```
 
-### Step 2: Build and Push Docker Image
+### Step 3: Build and Push Docker Image
 
 ```bash
 # Get ACR login server
@@ -123,23 +160,10 @@ docker build -t $ACR_LOGIN_SERVER/lamp-app:latest .
 docker push $ACR_LOGIN_SERVER/lamp-app:latest
 ```
 
-### Step 3: Create Web App with Managed Identity
+### Step 4: Configure Web App with System-Managed Identity
 
 ```bash
-# Create the web app
-az webapp create \
-  --resource-group $RESOURCE_GROUP \
-  --plan "${APP_NAME}-plan" \
-  --name $APP_NAME \
-  --deployment-container-image-name $ACR_LOGIN_SERVER/lamp-app:latest
-
-# Assign the managed identity to the web app for secure ACR access
-az webapp identity assign \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --identities $IDENTITY_ID
-
-# Configure the web app to use managed identity for ACR authentication
+# Configure the web app to use system-managed identity for ACR authentication
 az webapp config container set \
   --name $APP_NAME \
   --resource-group $RESOURCE_GROUP \
@@ -165,7 +189,7 @@ az webapp log config \
   --docker-container-logging filesystem
 ```
 
-### Step 4: Access Your App
+### Step 5: Access Your App
 
 ```bash
 # Get the actual URL of your deployed app
@@ -183,13 +207,43 @@ az webapp log tail --name $APP_NAME --resource-group $RESOURCE_GROUP
 To update your app with new changes:
 
 ```bash
-# Rebuild and push updated image
+# Using the update script (recommended - auto-discovers resources)
+./update-app.sh
+# ✨ Now with automatic webhook deployment! Just push and wait.
+
+# Or specify resources explicitly
+./update-app.sh RESOURCE_GROUP APP_NAME ACR_NAME
+
+# Or using the full deployment script
+./deploy-to-azure.sh
+
+# Or manually rebuild and push updated image (if webhook is set up)
 docker build -t $ACR_LOGIN_SERVER/lamp-app:latest .
 docker push $ACR_LOGIN_SERVER/lamp-app:latest
+# 🎯 Webhook automatically triggers App Service update - no restart needed!
 
-# Restart the web app to pull latest image
+# Manual restart (only needed if no webhook)
 az webapp restart --name $APP_NAME --resource-group $RESOURCE_GROUP
 ```
+
+### 🤖 Continuous Deployment with ACR Webhooks
+
+The deployment script automatically sets up ACR webhooks for continuous deployment:
+
+- **Automatic Updates**: Push to ACR → Webhook triggers → App Service pulls new image
+- **No Manual Intervention**: No need to restart the app service manually
+- **Real-time Deployment**: Changes deploy within 2-3 minutes of pushing
+- **Webhook Management**: 
+  ```bash
+  # List webhooks
+  az acr webhook list --registry ACR_NAME --output table
+  
+  # View webhook events
+  az acr webhook list-events --registry ACR_NAME --name APP_NAME-webhook
+  
+  # Test webhook
+  az acr webhook ping --registry ACR_NAME --name APP_NAME-webhook
+  ```
 
 ### 🧹 Cleanup Resources
 
@@ -208,14 +262,16 @@ az group delete --name $RESOURCE_GROUP --yes --no-wait
 
 ### 🔒 Security Best Practices Implemented
 
-- **✅ Managed Identity**: Web app uses managed identity for secure ACR access (no credentials stored)
+- **✅ System-Managed Identity**: Web app uses system-managed identity for secure ACR access (no user-assigned identity needed)
 - **✅ No Admin Credentials**: ACR admin user disabled, uses RBAC instead
-- **✅ Least Privilege**: Managed identity has only AcrPull permissions (minimum required)
+- **✅ Least Privilege**: System-managed identity has only AcrPull permissions (minimum required)
 - **✅ HTTPS Only**: All traffic forced to HTTPS for encryption in transit
 - **✅ No Hardcoded Secrets**: No usernames/passwords stored in app configuration
-- **✅ Resource Scoping**: Managed identity scoped to specific ACR resource
+- **✅ Resource Scoping**: Identity scoped to specific ACR resource
 - **✅ RBAC Authentication**: Role-based access control instead of shared credentials
 - **✅ Container Registry Privacy**: Private registry with identity-based authentication
+- **✅ Automated Deployment**: Robust script with error handling and validation
+- **✅ Webhook Security**: Secure webhook URLs with proper authentication
 
 ## 🐳 Docker Commands
 
