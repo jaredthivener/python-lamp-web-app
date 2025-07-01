@@ -28,7 +28,7 @@ A beautiful, interactive hanging lamp web application built with FastAPI, featur
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
 - **Accessibility**: Full keyboard navigation and screen reader support
 
-### 🏗️ **Production Architecture**
+### 🏗️ **Architecture**
 - **Modular Bicep Infrastructure**: Maintainable, reusable Azure infrastructure as code
 - **Container-First**: Optimized Docker containers with multi-stage builds
 - **Auto-Scaling**: Azure App Service with configurable scaling policies
