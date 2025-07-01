@@ -45,7 +45,7 @@ source venv/bin/activate
 # Install dependencies if needed
 if ! python3 -c "import fastapi, uvicorn, jinja2" 2>/dev/null; then
     echo "📦 Installing dependencies..."
-    pip install -r requirements.txt
+    pip install -r src/requirements.txt
     echo "✅ Dependencies installed!"
 fi
 
