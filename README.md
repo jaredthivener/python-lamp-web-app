@@ -109,7 +109,7 @@ git clone <repository-url>
 cd lamp_web_app
 
 # Make scripts executable
-chmod +x start.sh deploy-to-azure.sh
+chmod +x start.sh
 ```
 
 ### 2️⃣ **Local Development**
