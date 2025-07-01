@@ -134,10 +134,6 @@ az login
 ```
 
 **🎉 That's it! Your app will be live in minutes with:**
-- ✅ Production-ready infrastructure
-- ✅ Automated deployment pipeline
-- ✅ Comprehensive monitoring
-- ✅ Enterprise security
 
 ---
 
