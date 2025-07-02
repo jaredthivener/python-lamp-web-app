@@ -159,7 +159,6 @@ cython_debug/
 .idea/
 
 # VS Code
-.vscode/
 *.swp
 *.swo
 
