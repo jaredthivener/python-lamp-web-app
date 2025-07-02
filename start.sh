@@ -40,7 +40,12 @@ fi
 
 # Activate virtual environment
 echo "🔄 Activating virtual environment..."
-source venv/bin/activate
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+else
+    echo "❌ venv/bin/activate not found. Virtual environment activation failed."
+    exit 1
+fi
 
 # Install dependencies if needed
 if ! python3 -c "import fastapi, uvicorn, jinja2" 2>/dev/null; then

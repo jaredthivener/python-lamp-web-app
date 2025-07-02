@@ -47,6 +47,9 @@ class LampApp {
         this.updateStringCurve();
         this.updateHandlePosition();
         
+        // Sync with backend state on load
+        this.syncWithBackend();
+        
         // Also update position after DOM is fully ready (as backup)
         requestAnimationFrame(() => {
             this.updateHandlePosition();
@@ -58,23 +61,25 @@ class LampApp {
     
     bindEvents() {
         // Lamp click/keyboard events (clicking anywhere on the lamp except string)
-        this.lamp.addEventListener('click', (e) => {
-            // Don't trigger if clicking on string elements
-            if (!e.target.closest('.pull-string-container')) {
-                e.preventDefault();
-                this.toggleLamp();
-            }
-        });
+        if (this.lamp) {
+            this.lamp.addEventListener('click', (e) => {
+                // Don't trigger if clicking on string elements
+                if (!e.target.closest('.pull-string-container')) {
+                    e.preventDefault();
+                    this.toggleLamp();
+                }
+            });
+            
+            this.lamp.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.toggleLamp();
+                }
+            });
+        }
         
         // String drag events
         this.bindStringDragEvents();
-        
-        this.lamp.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                this.toggleLamp();
-            }
-        });
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -433,6 +438,58 @@ class LampApp {
     }
     
     toggleLampState() {
+        // Call the API to toggle the lamp
+        this.callToggleAPI();
+    }
+
+    async callToggleAPI() {
+        try {
+            const response = await fetch('/api/v1/lamp/toggle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                // Update the lamp state based on API response
+                this.updateLampFromAPI(data);
+            } else {
+                // Fallback to local toggle if API fails
+                this.toggleLampLocal();
+            }
+        } catch (error) {
+            // Fallback to local toggle if API fails
+            this.toggleLampLocal();
+        }
+    }
+
+    updateLampFromAPI(data) {
+        // Update lamp state from API response
+        this.isOn = data.is_on;
+        
+        // Update lamp classes
+        this.lamp.classList.toggle('on', this.isOn);
+        this.lamp.classList.toggle('off', !this.isOn);
+        
+        // Animate lamp swinging
+        this.animateLampSwing();
+        
+        // Update theme
+        this.updateTheme();
+        
+        // Trigger particle effects
+        if (this.isOn) {
+            this.triggerLightParticles();
+        }
+        
+        // Update page title
+        document.title = `Lamp App - ${data.status.toUpperCase()}`;
+    }
+
+    toggleLampLocal() {
+        // Fallback method for local-only toggle
         this.isOn = !this.isOn;
         
         // Update lamp classes
@@ -698,23 +755,42 @@ class LampApp {
         }
     }
 
+    async syncWithBackend() {
+        // Add visual indicator
+        document.title = 'Loading... - Lamp App';
+        
+        try {
+            const response = await fetch('/api/v1/lamp/status');
+            if (response.ok) {
+                const data = await response.json();
+                // Set initial state from backend without animation
+                this.isOn = data.is_on;
+                this.lamp.classList.toggle('on', this.isOn);
+                this.lamp.classList.toggle('off', !this.isOn);
+                this.updateTheme();
+                
+                // Update page title to show sync status
+                document.title = `Lamp App - ${data.status.toUpperCase()}`;
+            } else {
+                document.title = 'Lamp App - API Error';
+            }
+        } catch (error) {
+            document.title = 'Lamp App - No Connection';
+        }
+    }
+
 }
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new LampApp();
-});
-
-// Create some floating particles periodically
-setInterval(() => {
-    if (window.lampApp && window.lampApp.particles.length < 30) {
-        window.lampApp.createParticle();
-    }
-}, 2000);
-
-// Store app instance globally for debugging
-window.addEventListener('load', () => {
     if (!window.lampApp) {
         window.lampApp = new LampApp();
+        
+        // Create some floating particles periodically
+        setInterval(() => {
+            if (window.lampApp && window.lampApp.particles.length < 30) {
+                window.lampApp.createParticle();
+            }
+        }, 2000);
     }
 });
