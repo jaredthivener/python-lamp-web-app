@@ -151,7 +151,7 @@ generate_unique_names() {
         unique_id=$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-' | head -c 16)
     else
         # Fallback to high-entropy random generation
-        unique_id=$(openssl rand -hex 8 2>/dev/null || echo "$(printf '%016x' $(($(date +%s) * RANDOM * RANDOM % 18446744073709551616)))")
+        unique_id=$(openssl rand -hex 8 2>/dev/null || printf '%016x' $(($(date +%s) * RANDOM * RANDOM % 18446744073709551616)))
     fi
     
     # Add attempt number for additional uniqueness in retries
