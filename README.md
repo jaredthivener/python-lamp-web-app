@@ -231,23 +231,23 @@ az acr build --registry <acr-name> --image lamp-app:latest .
 ### 📁 **Project Structure**
 ```
 python-lamp-web-app/
-├── 📁 src/                         # 🐍 Python application
-│   ├── main.py                     # FastAPI entry point
-│   ├── server.py                   # Server configuration
-│   ├── requirements.txt            # Python dependencies
-│   ├── 📁 static/                  # Frontend assets
-│   │   ├── style.css              # Application styles
-│   │   └── script.js              # Interactive functionality
-│   └── 📁 templates/               # Jinja2 templates
-│       └── index.html             # Main UI template
-├── 📁 infra/                       # ☁️ Azure infrastructure
-│   ├── main.bicep                 # Main Bicep template
-│   ├── main.bicepparam            # Parameters
-│   └── 📁 modules/                # Modular components
-├── 🐳 Dockerfile                   # Container definition
-├── 🚀 start.sh                     # Development script
-├── ☁️ deploy-to-azure.sh           # Azure deployment
-└── 📖 README.md                    # This documentation
+├── 📁 src/                      # 🐍  Python application
+│   ├── main.py                  # 🚀  FastAPI entry point
+│   ├── server.py                # ⚙️  Server configuration
+│   ├── requirements.txt         # 📦  Python dependencies
+│   ├── 📁 static/               # 🎨  Frontend assets
+│   │   ├── style.css            # 💅  Application styles
+│   │   └── script.js            # ⚡  Interactive functionality
+│   └── 📁 templates/            # 📄  Jinja2 templates
+│       └── index.html           # 🏠  Main UI template
+├── 📁 infra/                    # ☁️  Azure infrastructure
+│   ├── main.bicep               # 🎯  Main Bicep template
+│   ├── main.bicepparam          # 🔧  Parameters
+│   └── 📁 modules/              # 🧩  Modular components
+├── 🐳 Dockerfile                # 📦  Container definition
+├── 🚀 start.sh                  # 🛠️  Development script
+├── ☁️ deploy-to-azure.sh        # ⚡  Azure deployment
+└── 📖 README.md                 # 📚  This documentation
 ```
 
 ### 🛠️ **Development Workflow**

@@ -549,100 +549,89 @@ setup_continuous_deployment() {
         return 1
     fi
     
-    # Configure the web app to use ACR with system-managed identity
-    log_info "Configuring container settings for continuous deployment..."
-    if ! az webapp config container set \
-        --name "$app_name" \
-        --resource-group "$resource_group" \
-        --container-image-name "${acr_login_server}/lamp-app:latest" \
-        --container-registry-url "https://${acr_login_server}" \
-        --output none; then
-        log_error "Failed to configure container settings"
-        return 1
-    fi
+    # Enable continuous deployment using the correct approach
+    log_info "Enabling continuous deployment on App Service..."
     
-    # Enable continuous deployment - modern approach
-    log_info "Enabling continuous deployment..."
-    
-    # Method 1: Try the modern webhook approach
-    local webhook_url
+    # Enable container continuous deployment on the app service
     if az webapp deployment container config \
         --name "$app_name" \
         --resource-group "$resource_group" \
         --enable-cd true \
-        --output none 2>/dev/null; then
-        
-        log_success "Continuous deployment enabled"
-        
-        # Get the webhook URL using publishing profile
-        local publish_url
-        if publish_url=$(az webapp deployment list-publishing-profiles \
-            --name "$app_name" \
-            --resource-group "$resource_group" \
-            --query "[?publishMethod=='WebDeploy'].publishUrl" \
-            --output tsv 2>/dev/null); then
-            
-            # Extract the site name and construct webhook URL
-            local site_name
-            site_name=$(echo "$publish_url" | cut -d'.' -f1)
-            webhook_url="https://${site_name}.scm.azurewebsites.net/docker/hook"
-            log_info "Webhook URL constructed: $webhook_url"
-        fi
+        --output none; then
+        log_success "Continuous deployment enabled on App Service"
+    else
+        log_warning "Failed to enable continuous deployment - will use manual webhook setup"
     fi
     
-    # Method 2: Fallback - construct webhook URL directly
-    if [[ -z "$webhook_url" ]]; then
-        log_info "Using fallback webhook URL construction..."
-        webhook_url="https://${app_name}.scm.azurewebsites.net/docker/hook"
-        log_info "Fallback webhook URL: $webhook_url"
+    # Construct the correct webhook URL directly
+    local webhook_url="https://${app_name}.scm.azurewebsites.net/docker/hook"
+    log_info "Using webhook URL: $webhook_url"
+    
+    # Get publishing credentials for webhook authentication
+    local username password
+    log_info "Retrieving publishing credentials for webhook authentication..."
+    
+    if creds=$(az webapp deployment list-publishing-credentials \
+        --name "$app_name" \
+        --resource-group "$resource_group" \
+        --output json 2>/dev/null); then
+        
+        username=$(echo "$creds" | jq -r '.publishingUserName // empty')
+        password=$(echo "$creds" | jq -r '.publishingPassword // empty')
+        
+        if [[ -n "$username" && -n "$password" ]]; then
+            log_success "Publishing credentials retrieved successfully"
+        else
+            log_warning "Could not parse publishing credentials"
+        fi
+    else
+        log_warning "Failed to get publishing credentials"
     fi
     
-    # Method 3: Get the actual deployment credentials for webhook
-    if [[ -n "$webhook_url" ]]; then
-        # Get publishing credentials to validate webhook URL
-        local username password
-        if creds=$(az webapp deployment list-publishing-credentials \
-            --name "$app_name" \
-            --resource-group "$resource_group" \
-            --query "{username:publishingUserName, password:publishingPassword}" \
-            --output json 2>/dev/null); then
-            
-            username=$(echo "$creds" | jq -r '.username')
-            password=$(echo "$creds" | jq -r '.password')
-            
-            if [[ "$username" != "null" && "$password" != "null" ]]; then
-                log_info "Publishing credentials retrieved successfully"
-            fi
-        fi
-        
-        # Create ACR webhook with proper configuration
-        local webhook_name
-        webhook_name=$(echo "${app_name}webhook" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
-        
-        # Ensure webhook name is unique and valid
-        if [[ ${#webhook_name} -gt 50 ]]; then
-            webhook_name="${webhook_name:0:50}"
-        fi
-        
-        log_info "Creating ACR webhook '$webhook_name'..."
-        
-        # Delete existing webhook if it exists
-        az acr webhook delete \
-            --name "$webhook_name" \
-            --registry "$acr_name" \
-            --yes &>/dev/null || true
-        
-        # Wait a moment for deletion to complete
-        sleep 5
-        
-        # Create the webhook with proper authentication if credentials are available
-        local webhook_headers="Content-Type=application/json"
-        if [[ -n "$username" && -n "$password" && "$username" != "null" && "$password" != "null" ]]; then
-            # Add basic auth header
-            local auth_header
+    # Create ACR webhook with proper configuration
+    local webhook_name
+    webhook_name=$(echo "${app_name}webhook" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
+    
+    # Ensure webhook name is valid (max 50 chars)
+    if [[ ${#webhook_name} -gt 50 ]]; then
+        webhook_name="${webhook_name:0:50}"
+    fi
+    
+    log_info "Creating ACR webhook '$webhook_name'..."
+    
+    # Delete existing webhook if it exists
+    az acr webhook delete \
+        --name "$webhook_name" \
+        --registry "$acr_name" \
+        --yes &>/dev/null || true
+    
+    # Wait for deletion to complete
+    sleep 5
+    
+    # Prepare webhook headers with authentication
+    local webhook_headers="Content-Type=application/json"
+    if [[ -n "$username" && -n "$password" ]]; then
+        # Create base64 encoded auth header (handle both macOS and Linux base64)
+        local auth_header
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS base64
             auth_header=$(echo -n "$username:$password" | base64)
-            webhook_headers="Content-Type=application/json Authorization=Basic $auth_header"
+        else
+            # Linux base64
+            auth_header=$(echo -n "$username:$password" | base64 -w 0)
         fi
+        webhook_headers="Content-Type=application/json,Authorization=Basic $auth_header"
+        log_info "Webhook configured with authentication headers"
+    else
+        log_warning "No authentication headers - webhook may not work properly"
+    fi
+    
+    # Create the webhook with retry logic
+    local max_attempts=3
+    local attempt=1
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        log_info "Creating webhook (attempt $attempt/$max_attempts)..."
         
         if az acr webhook create \
             --name "$webhook_name" \
@@ -653,44 +642,53 @@ setup_continuous_deployment() {
             --scope "lamp-app:*" \
             --headers "$webhook_headers" \
             --status enabled \
-            --output none; then
+            --output none 2>/dev/null; then
             
             log_success "✅ ACR webhook created successfully: $webhook_name"
-            
-            # Verify webhook configuration
-            log_info "Webhook details:"
-            az acr webhook show \
-                --registry "$acr_name" \
-                --name "$webhook_name" \
-                --query "{name:name, serviceUri:serviceUri, status:status, scope:scope, actions:actions}" \
-                --output table 2>/dev/null || true
-            
-            # Test the webhook
-            log_info "Testing webhook configuration..."
-            if az acr webhook ping \
-                --name "$webhook_name" \
-                --registry "$acr_name" \
-                --output none 2>/dev/null; then
-                log_success "✅ Webhook test successful"
-            else
-                log_warning "Webhook test failed - webhook created but may need manual verification"
-            fi
-            
+            break
         else
-            log_warning "Failed to create ACR webhook automatically"
-            log_info "Manual webhook setup required:"
-            log_info "1. Go to Azure Portal -> Container Registry ($acr_name) -> Webhooks"
-            log_info "2. Add webhook with URL: $webhook_url"
-            log_info "3. Set scope to: lamp-app:*"
-            log_info "4. Set actions to: push"
-            log_info "5. Set status to: enabled"
+            if [[ $attempt -eq $max_attempts ]]; then
+                log_error "Failed to create ACR webhook after $max_attempts attempts"
+                break
+            fi
+            log_warning "Webhook creation failed, retrying in 10 seconds..."
+            sleep 10
+            ((attempt++))
         fi
+    done
+    
+    # Verify webhook if creation succeeded
+    if [[ $attempt -le $max_attempts ]]; then
+        log_info "Webhook details:"
+        az acr webhook show \
+            --registry "$acr_name" \
+            --name "$webhook_name" \
+            --query "{name:name, serviceUri:serviceUri, status:status, scope:scope, actions:actions}" \
+            --output table 2>/dev/null || true
         
-        return 0
+        # Test the webhook
+        log_info "Testing webhook configuration..."
+        if az acr webhook ping \
+            --name "$webhook_name" \
+            --registry "$acr_name" \
+            --output none 2>/dev/null; then
+            log_success "✅ Webhook test successful"
+        else
+            log_warning "Webhook test failed - webhook created but may need verification"
+        fi
     else
-        log_error "Failed to obtain webhook URL for continuous deployment"
-        return 1
+        log_warning "Manual webhook setup required:"
+        log_info "1. Go to Azure Portal -> Container Registry ($acr_name) -> Webhooks"
+        log_info "2. Add webhook with URL: $webhook_url"
+        log_info "3. Set scope to: lamp-app:*"
+        log_info "4. Set actions to: push"
+        log_info "5. Set status to: enabled"
+        if [[ -n "$username" && -n "$password" ]]; then
+            log_info "6. Add header: Authorization=Basic $(echo -n "$username:$password" | base64)"
+        fi
     fi
+    
+    return 0
 }
 
 create_acr_build_task() {
@@ -814,6 +812,131 @@ fix_deployment_issues() {
     log_success "Deployment fixes applied successfully"
 }
 
+fix_acr_authentication() {
+    local resource_group="$1"
+    local app_name="$2"
+    local acr_name="$3"
+    
+    log_info "Fixing ACR authentication configuration..."
+    
+    # Ensure ACR admin is disabled (for security)
+    log_info "Ensuring ACR admin user is disabled for security..."
+    if az acr update \
+        --name "$acr_name" \
+        --resource-group "$resource_group" \
+        --admin-enabled false \
+        --output none; then
+        log_success "ACR admin user disabled"
+    else
+        log_warning "Failed to disable ACR admin user"
+    fi
+    
+    # Get the system-assigned managed identity principal ID
+    local principal_id
+    if principal_id=$(az webapp identity show \
+        --name "$app_name" \
+        --resource-group "$resource_group" \
+        --query principalId \
+        --output tsv 2>/dev/null); then
+        log_info "System-managed identity principal ID: $principal_id"
+    else
+        log_error "Failed to get managed identity principal ID"
+        return 1
+    fi
+    
+    # Get ACR resource ID
+    local acr_id
+    if acr_id=$(az acr show \
+        --name "$acr_name" \
+        --resource-group "$resource_group" \
+        --query id \
+        --output tsv); then
+        log_info "ACR resource ID: $acr_id"
+    else
+        log_error "Failed to get ACR resource ID"
+        return 1
+    fi
+    
+    # Verify the role assignment exists
+    log_info "Verifying AcrPull role assignment..."
+    if az role assignment list \
+        --assignee "$principal_id" \
+        --scope "$acr_id" \
+        --role AcrPull \
+        --output none &>/dev/null; then
+        log_success "AcrPull role assignment verified"
+    else
+        log_warning "AcrPull role assignment not found - recreating..."
+        
+        # Wait for identity propagation
+        sleep 30
+        
+        # Recreate the role assignment
+        if az role assignment create \
+            --assignee "$principal_id" \
+            --scope "$acr_id" \
+            --role AcrPull \
+            --output none; then
+            log_success "AcrPull role assignment recreated"
+        else
+            log_error "Failed to recreate AcrPull role assignment"
+            return 1
+        fi
+    fi
+    
+    # Force App Service to use managed identity for ACR
+    log_info "Configuring App Service to use managed identity for ACR access..."
+    
+    # Get ACR login server
+    local acr_login_server
+    if acr_login_server=$(az acr show \
+        --name "$acr_name" \
+        --resource-group "$resource_group" \
+        --query loginServer \
+        --output tsv); then
+        log_info "ACR login server: $acr_login_server"
+    else
+        log_error "Failed to get ACR login server"
+        return 1
+    fi
+    
+    # Clear any existing registry credentials and force managed identity
+    log_info "Clearing any stored registry credentials..."
+    az webapp config appsettings delete \
+        --name "$app_name" \
+        --resource-group "$resource_group" \
+        --setting-names DOCKER_REGISTRY_SERVER_USERNAME DOCKER_REGISTRY_SERVER_PASSWORD \
+        --output none 2>/dev/null || true
+    
+    # Configure container settings with managed identity
+    if az webapp config container set \
+        --name "$app_name" \
+        --resource-group "$resource_group" \
+        --container-image-name "${acr_login_server}/lamp-app:latest" \
+        --container-registry-url "https://${acr_login_server}" \
+        --output none; then
+        log_success "Container settings updated to use managed identity"
+    else
+        log_error "Failed to update container settings"
+        return 1
+    fi
+    
+    # Ensure the critical setting is applied
+    if az resource update \
+        --resource-group "$resource_group" \
+        --name "$app_name" \
+        --resource-type "Microsoft.Web/sites" \
+        --set properties.siteConfig.acrUseManagedIdentityCreds=true \
+        --output none; then
+        log_success "ACR managed identity credentials enabled"
+    else
+        log_error "Failed to enable ACR managed identity credentials"
+        return 1
+    fi
+    
+    log_success "ACR authentication configuration fixed"
+}
+
 # =============================================================================
 # Main Deployment Function
 # =============================================================================
@@ -901,6 +1024,9 @@ main() {
     configure_system_managed_identity "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
     build_and_push_image "$ACR_NAME" "$acr_login_server"
     configure_web_app "$RESOURCE_GROUP" "$APP_NAME" "$acr_login_server"
+    
+    # Fix ACR authentication issues
+    fix_acr_authentication "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
     
     # Setup continuous deployment (this automatically creates ACR webhook)
     setup_continuous_deployment "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
