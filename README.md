@@ -2,7 +2,7 @@
 
 > **Modern containerized Python web application with production-ready Azure infrastructure**
 
-A beautiful, interactive hanging lamp web application built with FastAPI, featuring a modular Bicep infrastructure and modern DevOps practices for seamless Azure deployment.
+A beautiful, interactive hanging lamp web application built with FastAPI, featuring modular Bicep infrastructure and modern DevOps practices for seamless Azure deployment.
 
 ---
 
@@ -86,7 +86,7 @@ graph TB
 | Component | Purpose | Technology |
 |-----------|---------|------------|
 | **🔍 Monitoring** | Observability & logging | Log Analytics + Application Insights |
-| **🔐 Identity** | Secure authentication | User-assigned Managed Identity |
+| **🔐 Identity** | Secure authentication | System-assigned Managed Identity |
 | **📦 Container Platform** | Image storage & management | Azure Container Registry |
 | **🌐 Compute** | Application hosting | App Service with Linux containers |
 | **🔗 Integration** | CI/CD automation | ACR webhooks + role assignments |
@@ -100,16 +100,16 @@ graph TB
 # Required tools
 az --version      # Azure CLI
 docker --version  # Docker
-bicep --version   # Bicep CLI
+bicep --version   # Bicep CLI (optional for infrastructure)
 ```
 
 ### 1️⃣ **Clone & Setup**
 ```bash
 git clone <repository-url>
-cd lamp_web_app
+cd python-lamp-web-app
 
 # Make scripts executable
-chmod +x start.sh
+chmod +x start.sh deploy-to-azure.sh
 ```
 
 ### 2️⃣ **Local Development**
@@ -129,11 +129,11 @@ python src/main.py
 # Login to Azure
 az login
 
-# Deploy infrastructure + application
+# Deploy infrastructure + application (recommended)
 ./deploy-to-azure.sh
 ```
 
-**🎉 That's it! Your app will be live in minutes with:**
+**🎉 That's it! Your app will be live in minutes with full monitoring and continuous deployment!**
 
 ---
 
@@ -141,10 +141,10 @@ az login
 
 ### 🎯 **Modern Infrastructure (Recommended)**
 
-We've completely modernized the infrastructure using **modular Bicep templates**:
+Deploy using **modular Bicep templates** for production-ready infrastructure:
 
 ```bash
-# Deploy using modern Bicep infrastructure
+# Navigate to infrastructure directory
 cd infra
 
 # Preview deployment
@@ -172,7 +172,7 @@ infra/
 ├── 🔧 bicepconfig.json             # 📋 Bicep linting configuration
 └── 📁 modules/
     ├── 🔍 monitoring.bicep         # Log Analytics + App Insights
-    ├── 🔐 managed-identity.bicep   # User-assigned identity
+    ├── 🔐 managed-identity.bicep   # System-assigned identity
     ├── 📦 acr.bicep               # Container registry
     ├── 🌐 appservice.bicep        # App Service plan + web app
     └── 🔗 acr-integration.bicep   # Role assignment + webhook
@@ -196,9 +196,9 @@ param appPort = '8000'                  // Application port
 param containerRegistrySku = 'Basic'    // Basic, Standard, Premium
 ```
 
-### 🚀 **Legacy Deployment (Shell Script)**
+### 🚀 **Quick Deployment (Shell Script)**
 
-For backward compatibility, the shell script is still available:
+For rapid deployment with automated best practices:
 
 ```bash
 # Automated deployment with modern best practices
@@ -206,10 +206,22 @@ For backward compatibility, the shell script is still available:
 
 # Features:
 # ✅ Infrastructure validation
-# ✅ Resource provisioning
+# ✅ Resource provisioning  
 # ✅ Docker build & push
-# ✅ Webhook configuration
+# ✅ System-managed identity configuration
+# ✅ Webhook setup for continuous deployment
 # ✅ Health verification
+```
+
+### 🔄 **Update Deployment**
+
+```bash
+# Rebuild and push (webhook automatically deploys)
+docker build -t <acr-name>.azurecr.io/lamp-app:latest .
+docker push <acr-name>.azurecr.io/lamp-app:latest
+
+# Or use ACR build
+az acr build --registry <acr-name> --image lamp-app:latest .
 ```
 
 ---
@@ -218,7 +230,7 @@ For backward compatibility, the shell script is still available:
 
 ### 📁 **Project Structure**
 ```
-lamp_web_app/
+python-lamp-web-app/
 ├── 📁 src/                         # 🐍 Python application
 │   ├── main.py                     # FastAPI entry point
 │   ├── server.py                   # Server configuration
@@ -226,20 +238,19 @@ lamp_web_app/
 │   ├── 📁 static/                  # Frontend assets
 │   │   ├── style.css              # Application styles
 │   │   └── script.js              # Interactive functionality
-│   ├── 📁 templates/               # Jinja2 templates
-│   │   └── index.html             # Main UI template
-│   └── preview.html               # Development preview
+│   └── 📁 templates/               # Jinja2 templates
+│       └── index.html             # Main UI template
 ├── 📁 infra/                       # ☁️ Azure infrastructure
 │   ├── main.bicep                 # Main Bicep template
 │   ├── main.bicepparam            # Parameters
-│   └── modules/                   # Modular components
+│   └── 📁 modules/                # Modular components
 ├── 🐳 Dockerfile                   # Container definition
 ├── 🚀 start.sh                     # Development script
 ├── ☁️ deploy-to-azure.sh           # Azure deployment
 └── 📖 README.md                    # This documentation
 ```
 
-### �️ **Development Workflow**
+### 🛠️ **Development Workflow**
 
 1. **🧪 Local Testing**
    ```bash
@@ -251,7 +262,7 @@ lamp_web_app/
    ```bash
    cd infra
    bicep build main.bicep        # Validate Bicep syntax
-   az deployment sub validate    # Validate Azure deployment
+   az deployment sub validate --template-file main.bicep --parameters main.bicepparam
    ```
 
 3. **🐳 Container Testing**
@@ -316,7 +327,7 @@ curl http://localhost:8000/health
 
 | Security Layer | Implementation | Benefit |
 |----------------|----------------|---------|
-| **Identity** | User-assigned Managed Identity | No credential management |
+| **Identity** | System-assigned Managed Identity | No credential management |
 | **Access** | Azure RBAC with AcrPull role | Least privilege access |
 | **Transport** | HTTPS-only enforcement | Encrypted communication |
 | **Storage** | Private container registry | Secure image storage |
@@ -333,6 +344,15 @@ az webapp show --name <app-name> --resource-group <rg> \
 az role assignment list --assignee <principal-id> \
   --query "[].{Role:roleDefinitionName, Scope:scope}"
 ```
+
+### ✅ **Security Best Practices Implemented**
+
+- **System-Managed Identity**: Secure ACR access without stored credentials
+- **No Admin Credentials**: ACR admin user disabled, uses RBAC instead
+- **Least Privilege**: Only AcrPull permissions (minimum required)
+- **HTTPS Only**: All traffic encrypted in transit
+- **Resource Scoping**: Identity scoped to specific ACR resource
+- **Automated Security**: Robust deployment with validation
 
 ---
 
@@ -377,7 +397,7 @@ az monitor log-analytics query \
 1. **🍴 Fork & Clone**
    ```bash
    git clone <your-fork>
-   cd lamp_web_app
+   cd python-lamp-web-app
    ```
 
 2. **🧪 Test Locally**
@@ -450,256 +470,3 @@ This project is open source and available under the [MIT License](LICENSE).
 🚀 **Ready for Production** | 🔒 **Enterprise Secure** | 📊 **Fully Monitored**
 
 </div>
-RESOURCE_GROUP="lamp-app-rg"
-APP_NAME="lamp-web-app-$(date +%s)"  # Unique name with timestamp
-LOCATION="eastus2"  # Choose a region close to you
-ACR_NAME="lampappregistry$(date +%s)"  # Must be globally unique
-
-# Create resource group
-az group create --name $RESOURCE_GROUP --location $LOCATION
-
-# Create Azure Container Registry (Basic tier, NO admin user for security)
-az acr create --resource-group $RESOURCE_GROUP \
-  --name $ACR_NAME \
-  --sku Basic \
-  --admin-enabled false
-
-# Create App Service Plan (Free tier)
-az appservice plan create \
-  --name "${APP_NAME}-plan" \
-  --resource-group $RESOURCE_GROUP \
-  --sku F1 \
-  --is-linux
-
-# Create Web App
-az webapp create \
-  --resource-group $RESOURCE_GROUP \
-  --plan "${APP_NAME}-plan" \
-  --name $APP_NAME \
-  --deployment-container-image-name ${ACR_NAME}.azurecr.io/lamp-app:latest
-```
-
-### Step 2: Configure System-Managed Identity
-
-```bash
-# Enable system-managed identity for the Web App
-PRINCIPAL_ID=$(az webapp identity assign \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --query principalId \
-  --output tsv)
-
-# Assign AcrPull role to the system-managed identity for secure ACR access
-az role assignment create \
-  --assignee $PRINCIPAL_ID \
-  --scope $(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query id --output tsv) \
-  --role AcrPull
-```
-
-### Step 3: Build and Push Docker Image
-
-```bash
-# Get ACR login server
-ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query loginServer --output tsv)
-
-# Login to ACR using your Azure credentials (no admin credentials needed)
-az acr login --name $ACR_NAME
-
-# Build and tag the image
-docker build -t $ACR_LOGIN_SERVER/lamp-app:latest .
-
-# Push image to ACR (using your authenticated session)
-docker push $ACR_LOGIN_SERVER/lamp-app:latest
-```
-
-### Step 4: Configure Web App with System-Managed Identity
-
-```bash
-# Configure the web app to use system-managed identity for ACR authentication
-az webapp config container set \
-  --name $APP_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --docker-custom-image-name $ACR_LOGIN_SERVER/lamp-app:latest \
-  --docker-registry-server-url https://$ACR_LOGIN_SERVER
-
-# Configure app settings
-az webapp config appsettings set \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --settings PORT=8000 PYTHONPATH=/app/src
-
-# Enable HTTPS only for security
-az webapp update \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --https-only true
-
-# Enable container logging
-az webapp log config \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --docker-container-logging filesystem
-```
-
-### Step 5: Access Your App
-
-```bash
-# Get the actual URL of your deployed app
-az webapp show --name $APP_NAME --resource-group $RESOURCE_GROUP --query defaultHostName --output tsv
-
-# Check deployment status
-az webapp show --name $APP_NAME --resource-group $RESOURCE_GROUP --query state --output tsv
-
-# View logs (if needed for troubleshooting)
-az webapp log tail --name $APP_NAME --resource-group $RESOURCE_GROUP
-```
-
-### 🔄 Update Deployment
-
-To update your app with new changes:
-
-```bash
-# Using the update script (recommended - auto-discovers resources)
-./update-app.sh
-# ✨ Now with automatic webhook deployment! Just push and wait.
-
-# Or specify resources explicitly
-./update-app.sh RESOURCE_GROUP APP_NAME ACR_NAME
-
-# Or using the full deployment script
-./deploy-to-azure.sh
-
-# Or manually rebuild and push updated image (if webhook is set up)
-docker build -t $ACR_LOGIN_SERVER/lamp-app:latest .
-docker push $ACR_LOGIN_SERVER/lamp-app:latest
-# 🎯 Webhook automatically triggers App Service update - no restart needed!
-
-# Manual restart (only needed if no webhook)
-az webapp restart --name $APP_NAME --resource-group $RESOURCE_GROUP
-```
-
-### 🤖 Continuous Deployment with ACR Webhooks
-
-The deployment script automatically sets up ACR webhooks for continuous deployment:
-
-- **Automatic Updates**: Push to ACR → Webhook triggers → App Service pulls new image
-- **No Manual Intervention**: No need to restart the app service manually
-- **Real-time Deployment**: Changes deploy within 2-3 minutes of pushing
-- **Webhook Management**: 
-  ```bash
-  # List webhooks
-  az acr webhook list --registry ACR_NAME --output table
-  
-  # View webhook events
-  az acr webhook list-events --registry ACR_NAME --name APP_NAME-webhook
-  
-  # Test webhook
-  az acr webhook ping --registry ACR_NAME --name APP_NAME-webhook
-  ```
-
-### 🧹 Cleanup Resources
-
-When you're done testing, clean up to avoid charges:
-
-```bash
-# Delete the entire resource group (removes all resources)
-az group delete --name $RESOURCE_GROUP --yes --no-wait
-```
-
-### 💡 Azure Free Tier Limitations
-
-- **App Service Plan F1**: 1 GB RAM, 1 GB storage, 60 CPU minutes/day
-- **Container Registry Basic**: 10 GB storage, unlimited pulls
-- **Resource Group**: No cost, but monitor overall Azure free tier limits
-
-### 🔒 Security Best Practices Implemented
-
-- **✅ System-Managed Identity**: Web app uses system-managed identity for secure ACR access (no user-assigned identity needed)
-- **✅ No Admin Credentials**: ACR admin user disabled, uses RBAC instead
-- **✅ Least Privilege**: System-managed identity has only AcrPull permissions (minimum required)
-- **✅ HTTPS Only**: All traffic forced to HTTPS for encryption in transit
-- **✅ No Hardcoded Secrets**: No usernames/passwords stored in app configuration
-- **✅ Resource Scoping**: Identity scoped to specific ACR resource
-- **✅ RBAC Authentication**: Role-based access control instead of shared credentials
-- **✅ Container Registry Privacy**: Private registry with identity-based authentication
-- **✅ Automated Deployment**: Robust script with error handling and validation
-- **✅ Webhook Security**: Secure webhook URLs with proper authentication
-
-## 🐳 Docker Commands
-
-### Development
-```bash
-# Build the image
-docker build -t lamp-app .
-
-# Run the container
-docker run -p 8000:8000 lamp-app
-
-# Run with environment variables
-docker run -p 8000:8000 -e PORT=8000 lamp-app
-```
-
-### Production
-```bash
-# Build for production
-docker build -t lamp-app:prod .
-
-# Run in production mode
-docker run -d --name lamp-app -p 8000:8000 --restart unless-stopped lamp-app:prod
-```
-
-## 🛠️ Docker Best Practices Implemented
-
-- **Multi-stage builds**: Optimized image size
-- **Non-root user**: Enhanced security
-- **Health checks**: Container health monitoring
-- **Environment variables**: Configurable runtime
-- **Slim base image**: Python 3.13-slim for smaller footprint
-- **Layer caching**: Efficient builds with proper layer ordering
-- **Security**: No new privileges, resource limits
-
-## 🔧 Configuration
-
-### Environment Variables
-
-- `PORT`: Application port (default: 8000)
-- `PYTHONPATH`: Python path (set to `/app/src` in Docker)
-
-### Health Check
-
-The application includes a health check endpoint at `/health`
-
-## 🎨 Technologies Used
-
-- **Backend**: FastAPI (Python 3.13)
-- **Frontend**: Vanilla JavaScript, CSS3, HTML5
-- **Animations**: Anime.js library
-- **Containerization**: Docker
-- **Cloud Platform**: Azure App Service
-- **Container Registry**: Azure Container Registry
-- **Web Server**: Uvicorn (ASGI server)
-
-## 📱 Browser Support
-
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-
-## 🔗 API Endpoints
-
-- `GET /`: Main application interface
-- `GET /health`: Health check endpoint
-- `GET /static/*`: Static file serving
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with Docker
-5. Submit a pull request
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
