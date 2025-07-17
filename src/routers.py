@@ -234,13 +234,13 @@ async def schedule_lamp_action(schedule_time: str, action: str):
             detail=f"Schedule already exists for {schedule_time}"
         )
     
-    # 429 Too Many Requests if too many schedules
-    schedule_count = 0  # Simulate count
-    if schedule_count >= 10:
-        raise HTTPException(
-            status_code=429, 
-            detail="Maximum number of schedules (10) exceeded. Please remove some schedules first."
-        )
+    # Remove the unreachable validation for now
+    # schedule_count = 0  # Simulate count
+    # if schedule_count >= 10:
+    #     raise HTTPException(
+    #         status_code=429, 
+    #         detail="Maximum number of schedules (10) exceeded. Please remove some schedules first."
+    #     )
     
     # 201 Created for successful schedule creation
     return {
