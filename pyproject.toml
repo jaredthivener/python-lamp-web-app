@@ -37,12 +37,6 @@ dev = [
     "ruff>=0.0.290",
     "mypy>=1.5.0",
 ]
-security = [
-    "bandit[toml]>=1.7.5",        # Security linter for Python
-    "safety>=3.0.0",             # Checks for known security vulnerabilities
-    "semgrep>=1.45.0",           # Advanced static analysis
-    "pip-audit>=2.6.0",         # Audit Python packages for vulnerabilities
-]
 
 [project.urls]
 Homepage = "https://github.com/jaredthivener/python-lamp-web-app"
