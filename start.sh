@@ -16,12 +16,33 @@ echo "   💾 State persistence (remembers preferences)"
 echo "   🔧 Error handling and graceful fallbacks"
 echo ""
 
+# Check if uv is available
+if ! command -v uv &> /dev/null; then
+    echo "❌ uv not found. Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
+    if ! command -v uv &> /dev/null; then
+        echo "❌ uv installation failed. Please install manually: https://docs.astral.sh/uv/getting-started/installation/"
+        exit 1
+    fi
+fi
+echo "✅ uv is available"
+
 # Check if Python is available
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Python3 not found. Please install Python 3.8+"
+    echo "❌ Python3 not found. Please install Python 3.12+"
     exit 1
 fi
-echo "✅ Python3 is available"
+
+# Check Python version
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+REQUIRED_VERSION="3.12"
+if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+    echo "❌ Python $PYTHON_VERSION found, but this project requires Python $REQUIRED_VERSION or higher"
+    echo "   Please upgrade your Python installation"
+    exit 1
+fi
+echo "✅ Python $PYTHON_VERSION is available"
 
 # Check if port 8000 is already in use
 if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
@@ -31,28 +52,34 @@ if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
     sleep 2
 fi
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "🔧 Creating virtual environment..."
-    python3 -m venv venv
+# Check if virtual environment exists and sync dependencies
+if [ ! -d ".venv" ]; then
+    echo "🔧 Creating virtual environment with uv..."
+    uv venv .venv
     echo "✅ Virtual environment created!"
 fi
 
 # Activate virtual environment
 echo "🔄 Activating virtual environment..."
-if [ -f "venv/bin/activate" ]; then
-    source venv/bin/activate
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
 else
-    echo "❌ venv/bin/activate not found. Virtual environment activation failed."
+    echo "❌ .venv/bin/activate not found. Virtual environment activation failed."
     exit 1
 fi
 
-# Install dependencies if needed
-if ! python3 -c "import fastapi, uvicorn, jinja2" 2>/dev/null; then
-    echo "📦 Installing dependencies..."
-    pip install -r src/requirements.txt
-    echo "✅ Dependencies installed!"
+# Install dependencies
+echo "📦 Installing dependencies with uv..."
+if [ -f "pyproject.toml" ]; then
+    # Try to install in editable mode first, fallback to requirements.txt
+    if ! uv pip install -e .; then
+        echo "⚠️  Editable install failed, falling back to requirements.txt..."
+        uv pip install -r src/requirements.txt
+    fi
+else
+    uv pip install -r src/requirements.txt
 fi
+echo "✅ Dependencies installed!"
 
 echo ""
 echo "🚀 Starting the development server..."
