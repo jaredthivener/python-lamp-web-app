@@ -282,3 +282,13 @@ Thumbs.db
 
 # Project specific
 preview.html
+
+# Security scan reports
+bandit-report.json
+safety-report.json
+pip-audit-report.json
+semgrep-report.json
+bandit-results.sarif
+safety-results.json
+pip-audit-results.json
+semgrep.sarif

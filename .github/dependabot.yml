@@ -1,0 +1,90 @@
+# Enable Dependabot for automatic dependency updates
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "jaredthivener"
+    assignees:
+      - "jaredthivener"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    # Group minor and patch updates
+    groups:
+      production-dependencies:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "jinja2*"
+          - "pydantic*"
+          - "python-multipart*"
+      development-dependencies:
+        patterns:
+          - "pytest*"
+          - "black*"
+          - "ruff*"
+          - "mypy*"
+          - "httpx*"
+      security-dependencies:
+        patterns:
+          - "bandit*"
+          - "safety*"
+          - "semgrep*"
+          - "pip-audit*"
+    rebase-strategy: "auto"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jaredthivener"
+    assignees:
+      - "jaredthivener"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    rebase-strategy: "auto"
+
+  # Docker dependencies (if you add a Dockerfile later)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday" 
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jaredthivener"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
