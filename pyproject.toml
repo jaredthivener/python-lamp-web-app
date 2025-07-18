@@ -9,7 +9,7 @@ description = "An enhanced interactive lamp web application with 3D animations a
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Jared T", email = "N/A"},
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
