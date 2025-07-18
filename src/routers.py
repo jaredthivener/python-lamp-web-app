@@ -225,23 +225,6 @@ async def schedule_lamp_action(schedule_time: str, action: str):
             detail=f"Invalid action. Must be one of: {valid_actions}"
         )
     
-    # 409 Conflict if schedule already exists
-    # (In real app, you'd check against a database)
-    existing_schedule = False  # Simulate check
-    if existing_schedule:
-        raise HTTPException(
-            status_code=409, 
-            detail=f"Schedule already exists for {schedule_time}"
-        )
-    
-    # Remove the unreachable validation for now
-    # schedule_count = 0  # Simulate count
-    # if schedule_count >= 10:
-    #     raise HTTPException(
-    #         status_code=429, 
-    #         detail="Maximum number of schedules (10) exceeded. Please remove some schedules first."
-    #     )
-    
     # 201 Created for successful schedule creation
     return {
         "message": f"Lamp scheduled to {action} at {schedule_time}",
