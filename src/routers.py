@@ -3,7 +3,6 @@ API router for lamp-related endpoints
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import os
 import re
 
 router = APIRouter(prefix="/api/v1", tags=["lamp"])

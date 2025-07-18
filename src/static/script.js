@@ -199,7 +199,6 @@ class LampApp {
         
         // Apply forces to create spaghetti-like curves
         const forceStrength = this.currentPull / this.maxPull;
-        const swayStrength = this.currentSway / this.maxSway;
         
         // Each point gets influenced by the drag with increasing effect down the string
         for (let i = 1; i < this.stringPoints.length; i++) {
@@ -743,7 +742,8 @@ class LampApp {
         try {
             const saved = localStorage.getItem('lampState');
             if (saved) {
-                const state = JSON.parse(saved);
+                // Parse the saved state but don't restore it since we always start in dark mode
+                // const state = JSON.parse(saved);
                 
                 // Optionally restore lamp state (commented out to always start in dark mode)
                 // if (state.isOn) {
