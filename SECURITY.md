@@ -33,18 +33,6 @@ This project leverages GitHub's built-in security features for comprehensive pro
 - **Coverage**: API keys, tokens, passwords, certificates
 - **Action**: Automatic alerts and optional blocking
 
-## Supplementary Security Tools
-
-### 1. **Bandit** - Python Security Linter
-- **Purpose**: Python-specific security anti-patterns
-- **Usage**: `./security-scan-github.sh`
-- **Focus**: Issues not covered by CodeQL
-
-### 2. **Ruff Security Rules** - Fast Security Linting
-- **Purpose**: Quick security pattern detection
-- **Rules**: Bandit security rules (S prefix) + bugbear (B prefix)
-- **Integration**: Part of development workflow
-
 ## Quick Start
 
 ### GitHub Native (Recommended)
@@ -56,19 +44,6 @@ This project leverages GitHub's built-in security features for comprehensive pro
 # 4. Enable "Dependabot security updates"
 # 5. Enable "Code scanning" (CodeQL)
 # 6. Enable "Secret scanning"
-
-# Run supplementary local scans
-./security-scan-github.sh
-```
-
-### Manual Scanning (Development)
-```bash
-# Install minimal security tools
-uv pip install bandit ruff
-
-# Quick security check
-bandit -r src/ --severity-level medium
-ruff check src/ --select S,B
 ```
 
 ## CI/CD Integration
@@ -77,7 +52,6 @@ ruff check src/ --select S,B
 - **Security Analysis**: `.github/workflows/security-native.yml`
   - CodeQL analysis (Python + JavaScript) 
   - Dependency review on PRs
-  - Bandit supplementary scanning
 - **Dependabot**: `.github/dependabot.yml`
   - Weekly dependency updates
   - Grouped by dependency type
@@ -94,8 +68,7 @@ Access your security overview at:
 ✅ **Integrated workflow** - Results appear in PRs and Security tab  
 ✅ **Free for public repos** - No additional costs  
 ✅ **Continuous monitoring** - Always-on scanning  
-✅ **Community-driven** - Constantly updated rules  
-✅ **Compliance ready** - SOC 2, FedRAMP certified  
+✅ **Community-driven** - Constantly updated rules   
 
 ## Security Best Practices Applied
 
@@ -124,3 +97,42 @@ After running scans, review reports in this order:
 3. **Low/Info** issues for code quality
 
 Remember: Some findings may be false positives - review carefully!
+
+## Local Development Tools (Optional)
+
+### � **Pre-commit Hooks** - Development Quality Gates
+For teams wanting additional local enforcement before commits reach GitHub's security tools.
+
+**Quick Setup:**
+```bash
+# Add to development dependencies
+uv pip install pre-commit
+
+# Minimal configuration focusing on code quality
+pre-commit install
+```
+
+**Simple Configuration** (`.pre-commit-config.yaml`):
+```yaml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3.12
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+```
+
+**Why Optional?** GitHub's security tools provide comprehensive coverage:
+- **CodeQL** handles advanced security analysis
+- **Secret Scanning** catches credentials automatically  
+- **Dependabot** manages vulnerability detection
+- **Dependency Review** blocks problematic dependencies in PRs
+
+**When to Use:** Consider pre-commit hooks if your team wants immediate feedback during development, but GitHub's native tools remain the primary security layer.

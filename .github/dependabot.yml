@@ -34,15 +34,8 @@ updates:
         patterns:
           - "pytest*"
           - "black*"
-          - "ruff*"
           - "mypy*"
           - "httpx*"
-      security-dependencies:
-        patterns:
-          - "bandit*"
-          - "safety*"
-          - "semgrep*"
-          - "pip-audit*"
     rebase-strategy: "auto"
 
   # GitHub Actions dependencies
