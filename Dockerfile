@@ -14,14 +14,15 @@ RUN apk add --no-cache --virtual .build-deps \
         curl \
     && apk add --no-cache \
         ca-certificates \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && export PATH="/root/.local/bin:$PATH"
 
 # Add uv to PATH
-ENV PATH="/root/.cargo/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
 
 # Copy and install Python dependencies
 COPY src/requirements.txt /tmp/requirements.txt
-RUN uv pip install --system -r /tmp/requirements.txt && \
+RUN export PATH="/root/.local/bin:$PATH" && uv pip install --system -r /tmp/requirements.txt && \
     find /usr/local -depth \
         \( \
             \( -type d -a \( -name test -o -name tests -o -name idle_test -o -name __pycache__ \) \) \
