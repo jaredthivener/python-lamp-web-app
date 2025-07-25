@@ -1,7 +1,7 @@
 # Enable Dependabot for automatic dependency updates
 version: 2
 updates:
-  # Python dependencies
+  # Python dependencies (using uv for dependency management)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -9,7 +9,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     reviewers:
       - "jaredthivener"
     assignees:
@@ -21,22 +21,40 @@ updates:
     labels:
       - "dependencies"
       - "python"
-    # Group minor and patch updates
+      - "fastapi"
+    # Group updates for better management
     groups:
-      production-dependencies:
+      fastapi-core:
         patterns:
           - "fastapi*"
           - "uvicorn*"
+          - "starlette*"
+      web-dependencies:
+        patterns:
           - "jinja2*"
-          - "pydantic*"
           - "python-multipart*"
+          - "pydantic*"
+      async-dependencies:
+        patterns:
+          - "anyio*"
+          - "httpx*"
+          - "aiofiles*"
       development-dependencies:
         patterns:
           - "pytest*"
+          - "pytest-asyncio*"
           - "black*"
           - "mypy*"
           - "httpx*"
+          - "ruff*"
     rebase-strategy: "auto"
+    # Allow automatic security updates for critical vulnerabilities
+    allow:
+      - dependency-type: "all"
+    # Ignore specific dependencies that should be manually managed
+    ignore:
+      - dependency-name: "python"
+        # Ignore Python version updates as these should be carefully tested
 
   # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
