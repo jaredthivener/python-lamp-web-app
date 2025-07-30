@@ -62,8 +62,10 @@ prompt_with_default() {
     local prompt="$1"
     local default="$2"
     local variable_name="$3"
+    local value
     
-    read -r -p "$(echo -e "${BLUE}${prompt}${NC} [${GREEN}${default}${NC}]: ")"
+    # shellcheck disable=SC2034  # value is used via eval in the next line
+    read -r -p "$(echo -e "${BLUE}${prompt}${NC} [${GREEN}${default}${NC}]: ")" value
     eval "$variable_name=\"\${value:-\$default}\""
 }
 
@@ -964,38 +966,41 @@ main() {
     name_parts=$(generate_unique_names "$base_username" "1")
     read -r default_rg default_app default_acr <<< "$name_parts"
     
+    # Declare variables before using them
+    local resource_group app_name location acr_name sku acr_sku
+    
     # Prompt for all configuration
-    prompt_with_default "Resource Group name" "$default_rg" "RESOURCE_GROUP"
-    prompt_with_default "App Service name (globally unique)" "$default_app" "APP_NAME"
-    prompt_with_default "Azure region" "$DEFAULT_LOCATION" "LOCATION"
-    prompt_with_default "ACR name (globally unique, 5-50 chars, alphanumeric)" "$default_acr" "ACR_NAME"
-    prompt_with_default "App Service Plan SKU" "$DEFAULT_SKU" "SKU"
-    prompt_with_default "Container Registry SKU" "$DEFAULT_ACR_SKU" "ACR_SKU"
+    prompt_with_default "Resource Group name" "$default_rg" "resource_group"
+    prompt_with_default "App Service name (globally unique)" "$default_app" "app_name"
+    prompt_with_default "Azure region" "$DEFAULT_LOCATION" "location"
+    prompt_with_default "ACR name (globally unique, 5-50 chars, alphanumeric)" "$default_acr" "acr_name"
+    prompt_with_default "App Service Plan SKU" "$DEFAULT_SKU" "sku"
+    prompt_with_default "Container Registry SKU" "$DEFAULT_ACR_SKU" "acr_sku"
     
     # Validate resource names
-    if ! validate_resource_name "$RESOURCE_GROUP" "resource-group" || \
-       ! validate_resource_name "$APP_NAME" "app-name" || \
-       ! validate_resource_name "$ACR_NAME" "acr-name"; then
+    if ! validate_resource_name "$resource_group" "resource-group" || \
+       ! validate_resource_name "$app_name" "app-name" || \
+       ! validate_resource_name "$acr_name" "acr-name"; then
         log_error "Invalid resource names. Please check naming requirements and try again."
         exit 1
     fi
     
     # Check resource group existence (skip name availability checks for App Service and ACR)
     log_info "Checking resource group existence..."
-    if az group show --name "$RESOURCE_GROUP" &> /dev/null; then
-        log_warning "Resource group '$RESOURCE_GROUP' already exists. Continuing with existing group."
+    if az group show --name "$resource_group" &> /dev/null; then
+        log_warning "Resource group '$resource_group' already exists. Continuing with existing group."
     fi
     log_info "Skipping App Service and ACR name availability checks - names will be verified during resource creation"
     log_success "Resource names prepared for deployment"
     
     # Confirm deployment
     echo -e "\n${YELLOW}=== Deployment Summary ===${NC}"
-    echo "Resource Group: $RESOURCE_GROUP"
-    echo "Location: $LOCATION"
-    echo "App Service: $APP_NAME"
-    echo "App Service Plan SKU: $SKU"
-    echo "Container Registry: $ACR_NAME"
-    echo "Container Registry SKU: $ACR_SKU"
+    echo "Resource Group: $resource_group"
+    echo "Location: $location"
+    echo "App Service: $app_name"
+    echo "App Service Plan SKU: $sku"
+    echo "Container Registry: $acr_name"
+    echo "Container Registry SKU: $acr_sku"
     echo ""
     
     read -p "$(echo -e "${BLUE}Proceed with deployment? [y/N]:${NC} ")" -r
@@ -1005,60 +1010,60 @@ main() {
     fi
     
     # Set trap for cleanup on failure
-    trap 'cleanup_on_failure "$RESOURCE_GROUP"' ERR
+    trap 'cleanup_on_failure "$resource_group"' ERR
     
     # Create Azure resources
-    create_resource_group "$RESOURCE_GROUP" "$LOCATION"
-    create_container_registry "$RESOURCE_GROUP" "$ACR_NAME" "$ACR_SKU"
-    create_app_service_plan "$RESOURCE_GROUP" "$APP_NAME" "$SKU"
+    create_resource_group "$resource_group" "$location"
+    create_container_registry "$resource_group" "$acr_name" "$acr_sku"
+    create_app_service_plan "$resource_group" "$app_name" "$sku"
     
     # Get ACR login server
     local acr_login_server
     acr_login_server=$(az acr show \
-        --name "$ACR_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
+        --name "$acr_name" \
+        --resource-group "$resource_group" \
         --query loginServer \
         --output tsv)
     
-    create_web_app "$RESOURCE_GROUP" "$APP_NAME" "$acr_login_server"
-    configure_system_managed_identity "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
-    build_and_push_image "$ACR_NAME" "$acr_login_server"
-    configure_web_app "$RESOURCE_GROUP" "$APP_NAME" "$acr_login_server"
+    create_web_app "$resource_group" "$app_name" "$acr_login_server"
+    configure_system_managed_identity "$resource_group" "$app_name" "$acr_name"
+    build_and_push_image "$acr_name" "$acr_login_server"
+    configure_web_app "$resource_group" "$app_name" "$acr_login_server"
     
     # Fix ACR authentication issues
-    fix_acr_authentication "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
+    fix_acr_authentication "$resource_group" "$app_name" "$acr_name"
     
     # Setup continuous deployment (this automatically creates ACR webhook)
-    setup_continuous_deployment "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME"
+    setup_continuous_deployment "$resource_group" "$app_name" "$acr_name"
     
     # Optional: Create ACR build task for automated builds
-    create_acr_build_task "$RESOURCE_GROUP" "$ACR_NAME" "$APP_NAME"
+    create_acr_build_task "$resource_group" "$acr_name" "$app_name"
     
     # Restart app to apply new configuration
     log_info "Restarting Web App to apply configuration..."
-    az webapp restart --name "$APP_NAME" -g "$RESOURCE_GROUP" --output none
+    az webapp restart --name "$app_name" -g "$resource_group" --output none
     
-    verify_deployment "$RESOURCE_GROUP" "$APP_NAME"
+    verify_deployment "$resource_group" "$app_name"
     
     # Optional: Test webhook functionality
-    test_webhook_functionality "$RESOURCE_GROUP" "$APP_NAME" "$ACR_NAME" "$acr_login_server"
+    test_webhook_functionality "$resource_group" "$app_name" "$acr_name" "$acr_login_server"
     
     # Success summary
     echo -e "\n${GREEN}=== Deployment Completed Successfully! ===${NC}"
     echo "🚀 Your Lamp Web App is now deployed to Azure!"
     echo ""
     echo "📋 Deployment Details:"
-    echo "   • Resource Group: $RESOURCE_GROUP"
-    echo "   • App Service: $APP_NAME"
-    echo "   • Container Registry: $ACR_NAME"
-    echo "   • App URL: https://$(az webapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostName --output tsv)"
+    echo "   • Resource Group: $resource_group"
+    echo "   • App Service: $app_name"
+    echo "   • Container Registry: $acr_name"
+    echo "   • App URL: https://$(az webapp show --name "$app_name" --resource-group "$resource_group" --query defaultHostName --output tsv)"
     echo ""
     echo "🔧 Useful Commands:"
-    echo "   • View logs: az webapp log tail --name $APP_NAME --resource-group $RESOURCE_GROUP"
+    echo "   • View logs: az webapp log tail --name $app_name --resource-group $resource_group"
     echo "   • Update app: ./update-app.sh (now with automatic deployment!)"
     echo "   • Manual update: ./deploy-to-azure.sh (rerun this script)"
-    echo "   • List webhooks: az acr webhook list --registry $ACR_NAME --output table"
-    echo "   • Delete resources: az group delete --name $RESOURCE_GROUP --yes"
+    echo "   • List webhooks: az acr webhook list --registry $acr_name --output table"
+    echo "   • Delete resources: az group delete --name $resource_group --yes"
     echo ""
     echo "🔒 Security Features Enabled:"
     echo "   ✅ System-managed identity for ACR authentication"
