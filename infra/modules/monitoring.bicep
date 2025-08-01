@@ -34,6 +34,9 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02
     features: {
       enableLogAccessUsingOnlyResourcePermissions: true
     }
+    workspaceCapping: {
+      dailyQuotaGb: 1
+    }
   }
 }
 

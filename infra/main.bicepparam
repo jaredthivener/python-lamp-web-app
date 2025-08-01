@@ -12,15 +12,22 @@ param environmentName = 'dev'
 param location = 'eastus2'
 param resourceGroupName = 'rg-lamp-web-app-dev'
 
-// App Service Configuration
-param appServicePlanSku = 'B1' // Using B1 for better performance than F1
+// App Service Configuration  
+param appServicePlanSku = 'F1' // Using B1 for better performance than F1
 param appPort = '8000'
 
 // Container Registry Configuration
 param containerRegistrySku = 'Basic' // Basic tier is sufficient for development
 
-// Optional: Override for production environment
+// Production environment settings (uncomment for production)
 // param environmentName = 'prod'
 // param appServicePlanSku = 'P1v3'
 // param containerRegistrySku = 'Standard'
 // param resourceGroupName = 'rg-lamp-web-app-prod'
+// param location = 'eastus2' // Consider paired regions for production
+
+// Staging environment settings (uncomment for staging)
+// param environmentName = 'staging'
+// param appServicePlanSku = 'S1'
+// param containerRegistrySku = 'Standard'
+// param resourceGroupName = 'rg-lamp-web-app-staging'

@@ -20,9 +20,11 @@ targetScope = 'subscription'
 param resourceGroupName string = 'rg-python-webapp'
 
 @description('The name of the environment (e.g., dev, staging, prod)')
+@allowed(['dev', 'staging', 'prod'])
 param environmentName string
 
 @description('The Azure region where resources will be deployed')
+@allowed(['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'southeastasia'])
 param location string = 'eastus2'
 
 @description('The SKU for the App Service Plan')
@@ -36,6 +38,21 @@ param containerRegistrySku string = 'Basic'
 @description('The port number the application listens on')
 param appPort string = '8000'
 
+@description('The Git repository URL containing the source code and Dockerfile')
+param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+
+@description('The Git branch to use for building the image')
+param sourceBranch string = 'main'
+
+@description('The name of the Docker image to build')
+param imageName string = 'lamp-app'
+
+@description('The tag for the Docker image')
+param imageTag string = 'latest'
+
+@description('The path to the Dockerfile relative to the repository root')
+param dockerfilePath string = 'Dockerfile'
+
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var resourcePrefix = 'lamp'
@@ -47,10 +64,10 @@ var appServiceName = '${resourcePrefix}-app-${resourceToken}'
 var logAnalyticsWorkspaceName = '${resourcePrefix}-logs-${resourceToken}'
 var applicationInsightsName = '${resourcePrefix}-ai-${resourceToken}'
 var managedIdentityName = '${resourcePrefix}-identity-${resourceToken}'
+var keyVaultName = '${resourcePrefix}-kv-${resourceToken}'
 
 // Tags for resource management
 var commonTags = {
-  'azd-env-name': environmentName
   project: 'lamp-web-app'
   environment: environmentName
   managedBy: 'bicep'
@@ -96,6 +113,21 @@ module managedIdentity 'modules/managed-identity.bicep' = {
 }
 
 // =============================================================================
+// Key Vault Module Deployment
+// =============================================================================
+module keyVault 'modules/keyvault.bicep' = {
+  name: 'keyvault-deployment'
+  scope: resourceGroup
+  params: {
+    keyVaultName: keyVaultName
+    location: location
+    tags: commonTags
+    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+  }
+}
+
+// =============================================================================
 // Azure Container Registry Module Deployment
 // =============================================================================
 module acr 'modules/acr.bicep' = {
@@ -106,6 +138,13 @@ module acr 'modules/acr.bicep' = {
     location: location
     containerRegistrySku: containerRegistrySku
     tags: commonTags
+    sourceRepositoryUrl: sourceRepositoryUrl
+    sourceBranch: sourceBranch
+    imageName: imageName
+    imageTag: imageTag
+    dockerfilePath: dockerfilePath
+    managedIdentityId: managedIdentity.outputs.managedIdentityId
+    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
 
@@ -125,9 +164,11 @@ module appService 'modules/appservice.bicep' = {
     containerRegistryLoginServer: acr.outputs.containerRegistryLoginServer
     applicationInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    keyVaultUri: keyVault.outputs.keyVaultUri
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    managedIdentityClientId: managedIdentity.outputs.managedIdentityClientId
   }
 }
 
@@ -141,7 +182,7 @@ module acrIntegration 'modules/acr-integration.bicep' = {
     containerRegistryId: acr.outputs.containerRegistryId
     containerRegistryName: acr.outputs.containerRegistryName
     appServicePrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    webhookServiceUri: 'https://${appService.outputs.appServiceHostName}/docker/hook'
+    webhookServiceUri: 'https://${appService.outputs.appServiceName}.scm.azurewebsites.net/api/registry/webhook'
     location: location
   }
 }
@@ -164,6 +205,18 @@ output containerRegistryName string = acr.outputs.containerRegistryName
 @description('The login server of the Container Registry')
 output containerRegistryLoginServer string = acr.outputs.containerRegistryLoginServer
 
+@description('The built image name')
+output imageName string = acr.outputs.imageName
+
+@description('The built image tag')
+output imageTag string = acr.outputs.imageTag
+
+@description('The full image name with registry URL')
+output fullImageName string = acr.outputs.fullImageName
+
+@description('The deployment script name used for building the image')
+output buildScriptName string = acr.outputs.buildScriptName
+
 @description('The resource ID of the App Service')
 output appServiceId string = appService.outputs.appServiceId
 
@@ -181,3 +234,9 @@ output applicationInsightsInstrumentationKey string = monitoring.outputs.applica
 
 @description('The connection string for Application Insights')
 output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
+
+@description('The name of the Key Vault')
+output keyVaultName string = keyVault.outputs.keyVaultName
+
+@description('The URI of the Key Vault')
+output keyVaultUri string = keyVault.outputs.keyVaultUri

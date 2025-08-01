@@ -33,6 +33,9 @@ param applicationInsightsInstrumentationKey string
 @secure()
 param applicationInsightsConnectionString string
 
+@description('Key Vault URI for secret references')
+param keyVaultUri string
+
 @description('Log Analytics workspace ID for diagnostics')
 param logAnalyticsWorkspaceId string
 
@@ -41,6 +44,9 @@ param managedIdentityId string
 
 @description('The principal ID of the user-assigned managed identity')
 param managedIdentityPrincipalId string
+
+@description('The client ID of the user-assigned managed identity')
+param managedIdentityClientId string
 
 // =============================================================================
 // App Service Plan (Linux)
@@ -82,10 +88,12 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
     reserved: true
     httpsOnly: true
     clientAffinityEnabled: false
+    scmSiteAlsoStopped: false
     siteConfig: {
       linuxFxVersion: 'DOCKER|${containerRegistryLoginServer}/lamp-app:latest'
       acrUseManagedIdentityCreds: true
-      acrUserManagedIdentityID: managedIdentityId
+      acrUserManagedIdentityID: managedIdentityClientId
+      keyVaultReferenceIdentity: managedIdentityId
       alwaysOn: appServicePlanSku != 'F1' && appServicePlanSku != 'D1' ? true : false
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
@@ -115,18 +123,54 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: applicationInsightsConnectionString
+          value: !empty(keyVaultUri) ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ApplicationInsights--ConnectionString/)' : applicationInsightsConnectionString
         }
         {
           name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
           value: '~3'
         }
+        {
+          name: 'ENVIRONMENT'
+          value: tags.environment
+        }
+        {
+          name: 'WEBSITE_HEALTHCHECK_MAXPINGFAILURES'
+          value: '5'
+        }
+        {
+          name: 'DOCKER_ENABLE_CI'
+          value: 'true'
+        }
+        {
+          name: 'WEBSITE_WEBDEPLOY_USE_SCM'
+          value: 'true'
+        }
       ]
       cors: {
-        allowedOrigins: ['*']
+        allowedOrigins: []
         supportCredentials: false
       }
+      ipSecurityRestrictions: [
+        {
+          ipAddress: 'Any'
+          action: 'Allow'
+          priority: 2147483647
+          name: 'Allow all'
+          description: 'Allow all access'
+        }
+      ]
     }
+  }
+}
+
+// =============================================================================
+// App Service Basic Publishing Credentials Configuration
+// =============================================================================
+resource appServiceBasicPublishingCredentialsPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-11-01' = {
+  parent: appService
+  name: 'scm'
+  properties: {
+    allow: true
   }
 }
 
@@ -187,3 +231,6 @@ output appServicePrincipalId string = managedIdentityPrincipalId
 
 @description('The App Service resource object')
 output appService object = appService
+
+@description('The webhook URL for continuous deployment')
+output webhookUrl string = 'https://${appService.name}.scm.azurewebsites.net/api/registry/webhook'
