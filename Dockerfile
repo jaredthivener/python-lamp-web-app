@@ -1,5 +1,5 @@
 # Multi-stage build for optimized final image
-FROM python:3.13-alpine AS builder
+FROM python:3.13.5-alpine AS builder
 
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -32,7 +32,7 @@ RUN export PATH="/root/.local/bin:$PATH" && uv pip install --system -r /tmp/requ
     apk del .build-deps
 
 # Production stage
-FROM python:3.13-alpine
+FROM python:3.13.5-alpine
 
 # Set production environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -40,12 +40,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# Install runtime dependencies only
-RUN apk add --no-cache \
+# Install runtime dependencies, remove SQLite3, and clean up in one layer
+RUN apk update && apk upgrade --no-cache \
+    && apk add --no-cache \
         curl \
         ca-certificates \
         tini \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/cache/apk/* \
+    && find /usr -name "*sqlite*" -type f -delete \
+    && find /lib -name "*sqlite*" -type f -delete \
+    && rm -f /usr/lib/libsqlite3.so* \
+    && rm -f /usr/bin/sqlite3
 
 # Create non-root user for security
 RUN addgroup -g 1000 appuser && \
