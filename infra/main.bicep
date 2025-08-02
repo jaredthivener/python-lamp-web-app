@@ -151,9 +151,8 @@ module postgresDatabase 'modules/postgresql.bicep' = {
 }
 
 // =============================================================================
-// Azure Container Registry Module Deployment (TEMPORARILY DISABLED FOR INITIAL DEPLOYMENT)
+// Azure Container Registry Module Deployment
 // =============================================================================
-/*
 module acr 'modules/acr.bicep' = {
   name: 'acr-deployment'
   scope: resourceGroup
@@ -171,19 +170,6 @@ module acr 'modules/acr.bicep' = {
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
-*/
-
-// Simple ACR without build script for initial deployment
-module simpleAcr 'modules/simple-acr.bicep' = {
-  name: 'simple-acr-deployment'
-  scope: resourceGroup
-  params: {
-    containerRegistryName: containerRegistryName
-    location: location
-    containerRegistrySku: containerRegistrySku
-    tags: commonTags
-  }
-}
 
 // =============================================================================
 // App Service Module Deployment
@@ -198,7 +184,7 @@ module appService 'modules/appservice.bicep' = {
     appServicePlanSku: appServicePlanSku
     tags: commonTags
     appPort: appPort
-    containerRegistryLoginServer: simpleAcr.outputs.containerRegistryLoginServer
+    containerRegistryLoginServer: acr.outputs.containerRegistryLoginServer
     applicationInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
     keyVaultUri: keyVault.outputs.keyVaultUri

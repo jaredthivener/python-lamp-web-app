@@ -110,7 +110,7 @@ resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
 // Deployment Script to Build and Push Image
 // =============================================================================
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'build-push-image-${uniqueString(containerRegistry.id)}'
+  name: 'build-push-image-${uniqueString(containerRegistry.id, location)}'
   location: location
   kind: 'AzureCLI'
   identity: {
