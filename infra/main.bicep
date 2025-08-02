@@ -1,32 +1,6 @@
 targetScope = 'subscription'
-// ========// Build scrip// @description('The Git repository URL containing the source code and Dockerfile')
-// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
 
-// @description('The Git branch to use for building the image')
-// param sourceBranch string = 'main'
-
-// @description('The name of the Docker image to build')
-// param imageName string = 'lamp-app'
-
-// @description('The tag for the Docker image')
-// param imageTag string = 'latest'
-
-// @description('The path to the Dockerfile relative to the repository root')
-// param dockerfilePath string = 'Dockerfile'disabled since using pre-built image)
-// @description('The GitHub repository URL containing the source code')
-// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
-
-// @description('The Git branch to build from')
-// param sourceBranch string = 'main'
-
-// @description('The name of the container image')
-// param imageName string = 'lamp-app'
-
-// @description('The tag for the container image')
-// param imageTag string = 'latest'
-
-// @description('The path to the Dockerfile in the repository')
-// param dockerfilePath string = 'Dockerfile'=======================================================
+// =============================================================================
 // Azure Infrastructure for Lamp Web App - Main Template
 // =============================================================================
 // This Bicep template orchestrates the deployment of the lamp web app infrastructure
@@ -65,20 +39,20 @@ param containerRegistrySku string = 'Basic'
 @description('The port number the application listens on')
 param appPort string = '8000'
 
-// @description('The Git repository URL containing the source code and Dockerfile')
-// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+@description('The Git repository URL containing the source code and Dockerfile')
+param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
 
-// @description('The Git branch to use for building the image')
-// param sourceBranch string = 'main'
+@description('The Git branch to use for building the image')
+param sourceBranch string = 'main'
 
-// @description('The name of the Docker image to build')
-// param imageName string = 'lamp-app'
+@description('The name of the Docker image to build')
+param imageName string = 'lamp-app'
 
-// @description('The tag for the Docker image')
-// param imageTag string = 'latest'
+@description('The tag for the Docker image')
+param imageTag string = 'latest'
 
-// @description('The path to the Dockerfile relative to the repository root')
-// param dockerfilePath string = 'Dockerfile'
+@description('The path to the Dockerfile relative to the repository root')
+param dockerfilePath string = 'Dockerfile'
 
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -191,14 +165,11 @@ module acr 'modules/acr.bicep' = {
     tags: commonTags
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    // Build script parameters disabled since using pre-built image
-    // sourceRepositoryUrl: sourceRepositoryUrl
-    // sourceBranch: sourceBranch
-    // imageName: imageName
-    // imageTag: imageTag
-    // dockerfilePath: dockerfilePath
-    // managedIdentityId: managedIdentity.outputs.managedIdentityId
-    // managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    sourceRepositoryUrl: sourceRepositoryUrl
+    sourceBranch: sourceBranch
+    imageName: imageName
+    imageTag: imageTag
+    dockerfilePath: dockerfilePath
   }
 }
 
@@ -266,7 +237,7 @@ output imageName string = acr.outputs.imageName
 @description('The built image tag')
 output imageTag string = acr.outputs.imageTag
 
-@description('The full image name with registry URL')
+@description('The full image name with registry URL including repository')
 output fullImageName string = acr.outputs.fullImageName
 
 // @description('The deployment script name used for building the image (disabled)')

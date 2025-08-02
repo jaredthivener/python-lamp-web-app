@@ -4,33 +4,32 @@
 // This module creates an Azure Container Registry with security best practices
 // =============================================================================
 
-@description('The name of the container registry')
+@description('The name of the Container Registry')
 param containerRegistryName string
 
-@description('The Azure region where the registry will be deployed')
+@description('The Azure region where resources will be deployed')
 param location string
 
-@description('The SKU for the Azure Container Registry')
-@allowed(['Basic', 'Standard', 'Premium'])
+@description('The SKU name for the Container Registry')
 param containerRegistrySku string = 'Basic'
 
 @description('Tags to apply to the container registry')
 param tags object = {}
 
-// @description('The Git repository URL containing the source code and Dockerfile')
-// param sourceRepositoryUrl string
+@description('The Git repository URL containing the source code and Dockerfile')
+param sourceRepositoryUrl string
 
-// @description('The Git branch to use for building the image')
-// param sourceBranch string = 'main'
+@description('The Git branch to use for building the image')
+param sourceBranch string = 'main'
 
-// @description('The name of the Docker image to build')
-// param imageName string = 'lamp-app'
+@description('The name of the Docker image to build')
+param imageName string = 'lamp-app'
 
-// @description('The tag for the Docker image')
-// param imageTag string = 'latest'
+@description('The tag for the Docker image')
+param imageTag string = 'latest'
 
-// @description('The path to the Dockerfile relative to the repository root')
-// param dockerfilePath string = 'Dockerfile'
+@description('The path to the Dockerfile relative to the repository root')
+param dockerfilePath string = 'Dockerfile'
 
 @description('The resource ID of the user-assigned managed identity for deployment scripts')
 param managedIdentityId string
@@ -94,9 +93,8 @@ resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 // =============================================================================
-// Deployment Script to Build and Push Image (DISABLED - using pre-built image)
+// Deployment Script to Build and Push Image
 // =============================================================================
-/*
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'build-push-image-${uniqueString(containerRegistry.id, location)}'
   location: location
@@ -184,10 +182,8 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   }
   dependsOn: [
     acrPushRoleAssignment
-    contributorRoleAssignment
   ]
 }
-*/
 
 // =============================================================================
 // Outputs
@@ -205,13 +201,13 @@ output containerRegistryId string = containerRegistry.id
 output containerRegistry object = containerRegistry
 
 @description('The name of the built image')
-output imageName string = 'lamp-app' // hardcoded since script is disabled
+output imageName string = imageName
 
 @description('The tag of the built image') 
-output imageTag string = 'latest' // hardcoded since script is disabled
+output imageTag string = imageTag
 
 @description('The full image name with registry URL')
-output fullImageName string = '${containerRegistry.properties.loginServer}/lamp-app:latest'
+output fullImageName string = '${containerRegistry.properties.loginServer}/${imageName}:${imageTag}'
 
-// @description('The deployment script name')
-// output buildScriptName string = buildScript.name
+@description('The deployment script name')
+output buildScriptName string = buildScript.name
