@@ -33,6 +33,9 @@ param keyVaultName string
 @description('Environment name for resource naming')
 param environmentName string
 
+@description('The resource ID of the Log Analytics workspace for diagnostic settings')
+param logAnalyticsWorkspaceId string
+
 // =============================================================================
 // Azure Database for PostgreSQL - Flexible Server (Free Tier)
 // =============================================================================
@@ -133,49 +136,29 @@ resource postgresDiagnosticSetting 'Microsoft.Insights/diagnosticSettings@2021-0
   name: 'PostgreSQL-Diagnostics'
   scope: postgresServer
   properties: {
-    workspaceId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.OperationalInsights/workspaces/${replace(postgresServerName, '-postgres', '')}-logs'
+    workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
         category: 'PostgreSQLLogs'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
       }
       {
         category: 'PostgreSQLFlexSessions'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
       }
       {
         category: 'PostgreSQLFlexQueryStoreRuntime'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
       }
       {
         category: 'PostgreSQLFlexQueryStoreWaitStats'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
       }
     ]
     metrics: [
       {
         category: 'AllMetrics'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
       }
     ]
   }

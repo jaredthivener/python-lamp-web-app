@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: python-lamp-web-app
+metadata:
+  template: python-lamp-web-app@0.0.1-beta
+services:
+  api:
+    project: .
+    language: python
+    host: appservice
+
+hooks:
+  postprovision:
+    shell: sh
+    run: echo "Infrastructure provisioned successfully"
+    continueOnError: false
+
+infra:
+  provider: bicep
+  path: infra
+  module: main

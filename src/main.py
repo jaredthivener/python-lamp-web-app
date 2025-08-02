@@ -10,9 +10,9 @@ import logging
 # Import routers
 from api import router as lamp_router
 
-# Import database initialization
-from database import init_database
-from database.repository import LampRepository
+# Import high-availability services
+from services import start_sync_service, stop_sync_service
+from database.ha_repository import HALampRepository
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,15 +39,27 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on application startup"""
+    """Initialize services on application startup"""
     try:
-        logger.info("Initializing database...")
-        init_database()
-        logger.info("Database initialization completed")
+        logger.info("Starting high-availability services...")
+        
+        # Start the sync service for database/cache coordination
+        start_sync_service()
+        
+        logger.info("High-availability services started successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to start services: {e}")
         # Don't prevent app startup, but log the error
-        # In production, you might want to fail fast here
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup services on application shutdown"""
+    try:
+        logger.info("Stopping high-availability services...")
+        stop_sync_service()
+        logger.info("Services stopped successfully")
+    except Exception as e:
+        logger.error(f"Error stopping services: {e}")
 
 # Get the directory of the current file (src)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -69,41 +81,50 @@ async def read_root(request: Request):
 
 @app.get("/health")
 async def health_check():
-    """Comprehensive health check endpoint with database connectivity."""
+    """Comprehensive health check endpoint with high-availability status."""
     health_status = {
         "status": "healthy",
         "message": "Lamp app is running!",
         "services": {
             "api": "operational",
             "database": "unknown",
+            "cache": "unknown",
             "lamp_state": None
         }
     }
     
     try:
-        # Test database connectivity
-        repo = LampRepository()
+        # Test repository connectivity (both database and cache)
+        repo = HALampRepository()
         current_state = repo.get_current_state()
+        sync_status = repo.get_sync_status()
         
-        health_status["services"]["database"] = "connected"
+        health_status["services"]["database"] = "connected" if sync_status["database_available"] else "disconnected"
+        health_status["services"]["cache"] = "operational"
         health_status["services"]["lamp_state"] = "on" if current_state.is_on else "off"
+        
+        # Update overall status based on services
+        if not sync_status["database_available"]:
+            health_status["status"] = "degraded"
+            health_status["message"] = "App running in cache-only mode (database unavailable)"
         
         return health_status
         
     except Exception as e:
-        logger.warning(f"Database health check failed: {e}")
+        logger.warning(f"Health check failed: {e}")
         health_status["status"] = "degraded"
-        health_status["message"] = "App running but database unavailable"
-        health_status["services"]["database"] = "disconnected"
+        health_status["message"] = "App running but service checks failed"
+        health_status["services"]["database"] = "error"
+        health_status["services"]["cache"] = "error"
         
-        # Return 200 for degraded state (app still works without DB for basic functionality)
+        # Return 200 for degraded state (app still works)
         return health_status
 
 @app.get("/dashboard")
 async def dashboard():
     """Get comprehensive lamp dashboard data."""
     try:
-        repo = LampRepository()
+        repo = HALampRepository()
         dashboard_data = repo.get_dashboard_data()
         return dashboard_data
     except Exception as e:

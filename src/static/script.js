@@ -57,7 +57,7 @@ class LampApp {
         setInterval(() => {
             this.syncWithBackend();
             this.loadDashboard();
-        }, 30000); // Update every 30 seconds
+        }, 5000); // Update every 5 seconds for more responsive UI
         
         // Also update position after DOM is fully ready (as backup)
         requestAnimationFrame(() => {
@@ -477,12 +477,14 @@ class LampApp {
         // Update lamp state from API response
         this.isOn = data.is_on;
         
-        // Update lamp classes
+        // Update lamp classes to trigger CSS animations
         this.lamp.classList.toggle('on', this.isOn);
         this.lamp.classList.toggle('off', !this.isOn);
         
-        // Animate lamp swinging
-        this.animateLampSwing();
+        // Add a small delay to let CSS animations start, then enhance with JS animations
+        setTimeout(() => {
+            this.animateLampSwing();
+        }, 50);
         
         // Update theme
         this.updateTheme();
@@ -500,12 +502,14 @@ class LampApp {
         // Fallback method for local-only toggle
         this.isOn = !this.isOn;
         
-        // Update lamp classes
+        // Update lamp classes to trigger CSS animations
         this.lamp.classList.toggle('on', this.isOn);
         this.lamp.classList.toggle('off', !this.isOn);
         
-        // Animate lamp swinging
-        this.animateLampSwing();
+        // Add a small delay to let CSS animations start, then enhance with JS animations
+        setTimeout(() => {
+            this.animateLampSwing();
+        }, 50);
         
         // Update theme
         this.updateTheme();
@@ -530,29 +534,37 @@ class LampApp {
             ]
         });
         
-        // Add subtle bounce when turning on
+        // Enhance the CSS animations with JavaScript
         if (this.isOn) {
+            // The CSS already handles the glow opacity, but we can enhance with scale
             anime({
                 targets: '.light-glow',
-                scale: [0.5, 1.2, 1],
-                opacity: [0, 1, 1],
-                duration: 800,
+                scale: [0.8, 1.1, 1],
+                duration: 600,
                 easing: 'easeOutElastic(1, 0.4)'
             });
             
-            // Animate the bulb glow
+            // Animate the bulb glass with a subtle pulse
             anime({
                 targets: '.bulb-glass',
-                scale: [1, 1.05, 1],
-                duration: 600,
+                scale: [1, 1.08, 1],
+                duration: 500,
                 easing: 'easeOutElastic(1, 0.3)'
             });
-        } else {
-            // Fade out the glow
+            
+            // Add a warm pulse to the shade body
             anime({
-                targets: '.light-glow',
-                opacity: [1, 0],
+                targets: '.shade-body',
+                scale: [1, 1.02, 1],
                 duration: 400,
+                easing: 'easeOutQuad'
+            });
+        } else {
+            // When turning off, add a gentle fade-down animation
+            anime({
+                targets: '.bulb-glass',
+                scale: [1, 0.98, 1],
+                duration: 300,
                 easing: 'easeOutQuad'
             });
         }
@@ -769,7 +781,7 @@ class LampApp {
             const response = await fetch('/api/v1/lamp/status');
             if (response.ok) {
                 const data = await response.json();
-                // Set initial state from backend without animation
+                // Set initial state from backend and trigger animations
                 this.isOn = data.is_on;
                 this.lamp.classList.toggle('on', this.isOn);
                 this.lamp.classList.toggle('off', !this.isOn);
@@ -885,10 +897,8 @@ class LampApp {
                 this.updateTheme();
                 document.title = `Lamp App - ${data.status.toUpperCase()}`;
                 
-                // Refresh dashboard data after a short delay
-                setTimeout(() => {
-                    this.loadDashboard();
-                }, 1000);
+                // Refresh dashboard data immediately for instant stats update
+                this.loadDashboard();
                 
             } else {
                 console.error('Toggle failed:', response.status);

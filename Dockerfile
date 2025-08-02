@@ -12,9 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         build-essential \
         unixodbc-dev \
-    # Add Microsoft repository
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+        ca-certificates \
+    # Add Microsoft repository and key using modern approach
+    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     # Install Microsoft ODBC Driver for SQL Server
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
@@ -40,12 +41,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install runtime dependencies and Microsoft ODBC Driver
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
-        gnupg2 \
+        gnupg \
         unixodbc \
         tini \
         ca-certificates \
-    # Add Microsoft repository and key
-    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-prod.gpg \
+    # Add Microsoft repository and key using modern approach
+    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     # Install Microsoft ODBC Driver for SQL Server

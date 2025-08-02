@@ -17,20 +17,20 @@ param containerRegistrySku string = 'Basic'
 @description('Tags to apply to the container registry')
 param tags object = {}
 
-@description('The Git repository URL containing the source code and Dockerfile')
-param sourceRepositoryUrl string
+// @description('The Git repository URL containing the source code and Dockerfile')
+// param sourceRepositoryUrl string
 
-@description('The Git branch to use for building the image')
-param sourceBranch string = 'main'
+// @description('The Git branch to use for building the image')
+// param sourceBranch string = 'main'
 
-@description('The name of the Docker image to build')
-param imageName string = 'lamp-app'
+// @description('The name of the Docker image to build')
+// param imageName string = 'lamp-app'
 
-@description('The tag for the Docker image')
-param imageTag string = 'latest'
+// @description('The tag for the Docker image')
+// param imageTag string = 'latest'
 
-@description('The path to the Dockerfile relative to the repository root')
-param dockerfilePath string = 'Dockerfile'
+// @description('The path to the Dockerfile relative to the repository root')
+// param dockerfilePath string = 'Dockerfile'
 
 @description('The resource ID of the user-assigned managed identity for deployment scripts')
 param managedIdentityId string
@@ -94,21 +94,9 @@ resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 // =============================================================================
-// Role Assignment: Grant Managed Identity Contributor permissions on resource group
+// Deployment Script to Build and Push Image (DISABLED - using pre-built image)
 // =============================================================================
-resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, managedIdentityPrincipalId, 'Contributor')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor role
-    principalId: managedIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// =============================================================================
-// Deployment Script to Build and Push Image
-// =============================================================================
+/*
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'build-push-image-${uniqueString(containerRegistry.id, location)}'
   location: location
@@ -120,7 +108,7 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     }
   }
   properties: {
-    azCliVersion: '2.60.0'
+    azCliVersion: '2.75.0'
     timeout: 'PT45M'
     retentionInterval: 'PT2H'
     cleanupPreference: 'OnSuccess'
@@ -199,6 +187,7 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     contributorRoleAssignment
   ]
 }
+*/
 
 // =============================================================================
 // Outputs
@@ -216,13 +205,13 @@ output containerRegistryId string = containerRegistry.id
 output containerRegistry object = containerRegistry
 
 @description('The name of the built image')
-output imageName string = imageName
+output imageName string = 'lamp-app' // hardcoded since script is disabled
 
 @description('The tag of the built image') 
-output imageTag string = imageTag
+output imageTag string = 'latest' // hardcoded since script is disabled
 
 @description('The full image name with registry URL')
-output fullImageName string = '${containerRegistry.properties.loginServer}/${imageName}:${imageTag}'
+output fullImageName string = '${containerRegistry.properties.loginServer}/lamp-app:latest'
 
-@description('The deployment script name')
-output buildScriptName string = buildScript.name
+// @description('The deployment script name')
+// output buildScriptName string = buildScript.name

@@ -8,7 +8,7 @@ import logging
 import uuid
 
 # Database imports
-from database.repository import LampRepository
+from database.ha_repository import HALampRepository
 from database.models import (
     LampActivityResponse, 
     LampStatisticsResponse, 
@@ -39,9 +39,9 @@ def get_client_info(request: Request) -> tuple:
 
 @router.get("/lamp/status", response_model=LampStatusResponse)
 async def get_lamp_status():
-    """Get the current lamp status from database."""
+    """Get the current lamp status from HA repository."""
     try:
-        repo = LampRepository()
+        repo = HALampRepository()
         current_state = repo.get_current_state()
         
         return LampStatusResponse(
@@ -54,9 +54,9 @@ async def get_lamp_status():
 
 @router.post("/lamp/toggle", response_model=LampActionResponse)
 async def toggle_lamp(request: Request):
-    """Toggle the lamp state and persist to database."""
+    """Toggle the lamp state using HA repository."""
     try:
-        repo = LampRepository()
+        repo = HALampRepository()
         session_id, user_agent, ip_address = get_client_info(request)
         
         # Get current state before toggle
@@ -81,9 +81,9 @@ async def toggle_lamp(request: Request):
 
 @router.get("/lamp/dashboard", response_model=LampDashboardResponse)
 async def get_lamp_dashboard():
-    """Get comprehensive lamp dashboard data."""
+    """Get comprehensive lamp dashboard data using HA repository."""
     try:
-        repo = LampRepository()
+        repo = HALampRepository()
         dashboard_data = repo.get_dashboard_data()
         return dashboard_data
     except Exception as e:
@@ -92,12 +92,12 @@ async def get_lamp_dashboard():
 
 @router.get("/lamp/activities", response_model=List[LampActivityResponse])
 async def get_recent_activities(limit: int = 10):
-    """Get recent lamp activities."""
+    """Get recent lamp activities using HA repository."""
     try:
         if limit > 100:  # Prevent excessive data retrieval
             limit = 100
             
-        repo = LampRepository()
+        repo = HALampRepository()
         activities = repo.get_recent_activities(limit)
         
         return [
@@ -115,9 +115,9 @@ async def get_recent_activities(limit: int = 10):
 
 @router.get("/lamp/statistics/today", response_model=Optional[LampStatisticsResponse])
 async def get_today_statistics():
-    """Get today's lamp usage statistics."""
+    """Get today's lamp usage statistics using HA repository."""
     try:
-        repo = LampRepository()
+        repo = HALampRepository()
         stats = repo.get_daily_statistics()
         
         if not stats:
@@ -134,4 +134,15 @@ async def get_today_statistics():
         )
     except Exception as e:
         logger.error(f"Error getting today's statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/lamp/sync-status")
+async def get_sync_status():
+    """Get current sync status between cache and database."""
+    try:
+        repo = HALampRepository()
+        sync_status = repo.get_sync_status()
+        return sync_status
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -1,5 +1,32 @@
 targetScope = 'subscription'
-// =============================================================================
+// ========// Build scrip// @description('The Git repository URL containing the source code and Dockerfile')
+// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+
+// @description('The Git branch to use for building the image')
+// param sourceBranch string = 'main'
+
+// @description('The name of the Docker image to build')
+// param imageName string = 'lamp-app'
+
+// @description('The tag for the Docker image')
+// param imageTag string = 'latest'
+
+// @description('The path to the Dockerfile relative to the repository root')
+// param dockerfilePath string = 'Dockerfile'disabled since using pre-built image)
+// @description('The GitHub repository URL containing the source code')
+// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+
+// @description('The Git branch to build from')
+// param sourceBranch string = 'main'
+
+// @description('The name of the container image')
+// param imageName string = 'lamp-app'
+
+// @description('The tag for the container image')
+// param imageTag string = 'latest'
+
+// @description('The path to the Dockerfile in the repository')
+// param dockerfilePath string = 'Dockerfile'=======================================================
 // Azure Infrastructure for Lamp Web App - Main Template
 // =============================================================================
 // This Bicep template orchestrates the deployment of the lamp web app infrastructure
@@ -25,7 +52,7 @@ param environmentName string
 
 @description('The Azure region where resources will be deployed')
 @allowed(['centralus', 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'southeastasia'])
-param location string = 'centralus'
+param location string = 'eastus'
 
 @description('The SKU for the App Service Plan')
 @allowed(['F1', 'D1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P1v3', 'P2v3', 'P3v3'])
@@ -38,20 +65,20 @@ param containerRegistrySku string = 'Basic'
 @description('The port number the application listens on')
 param appPort string = '8000'
 
-@description('The Git repository URL containing the source code and Dockerfile')
-param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+// @description('The Git repository URL containing the source code and Dockerfile')
+// param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
 
-@description('The Git branch to use for building the image')
-param sourceBranch string = 'main'
+// @description('The Git branch to use for building the image')
+// param sourceBranch string = 'main'
 
-@description('The name of the Docker image to build')
-param imageName string = 'lamp-app'
+// @description('The name of the Docker image to build')
+// param imageName string = 'lamp-app'
 
-@description('The tag for the Docker image')
-param imageTag string = 'latest'
+// @description('The tag for the Docker image')
+// param imageTag string = 'latest'
 
-@description('The path to the Dockerfile relative to the repository root')
-param dockerfilePath string = 'Dockerfile'
+// @description('The path to the Dockerfile relative to the repository root')
+// param dockerfilePath string = 'Dockerfile'
 
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -147,6 +174,7 @@ module postgresDatabase 'modules/postgresql.bicep' = {
     administratorLoginPassword: postgresAdminPassword
     keyVaultName: keyVault.outputs.keyVaultName
     environmentName: environmentName
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -161,13 +189,16 @@ module acr 'modules/acr.bicep' = {
     location: location
     containerRegistrySku: containerRegistrySku
     tags: commonTags
-    sourceRepositoryUrl: sourceRepositoryUrl
-    sourceBranch: sourceBranch
-    imageName: imageName
-    imageTag: imageTag
-    dockerfilePath: dockerfilePath
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    // Build script parameters disabled since using pre-built image
+    // sourceRepositoryUrl: sourceRepositoryUrl
+    // sourceBranch: sourceBranch
+    // imageName: imageName
+    // imageTag: imageTag
+    // dockerfilePath: dockerfilePath
+    // managedIdentityId: managedIdentity.outputs.managedIdentityId
+    // managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
 
@@ -238,8 +269,8 @@ output imageTag string = acr.outputs.imageTag
 @description('The full image name with registry URL')
 output fullImageName string = acr.outputs.fullImageName
 
-@description('The deployment script name used for building the image')
-output buildScriptName string = acr.outputs.buildScriptName
+// @description('The deployment script name used for building the image (disabled)')
+// output buildScriptName string = acr.outputs.buildScriptName
 
 @description('The resource ID of the App Service')
 output appServiceId string = appService.outputs.appServiceId
