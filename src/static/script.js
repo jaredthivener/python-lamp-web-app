@@ -50,6 +50,15 @@ class LampApp {
         // Sync with backend state on load
         this.syncWithBackend();
         
+        // Load dashboard data
+        this.loadDashboard();
+        
+        // Periodic sync and dashboard updates
+        setInterval(() => {
+            this.syncWithBackend();
+            this.loadDashboard();
+        }, 30000); // Update every 30 seconds
+        
         // Also update position after DOM is fully ready (as backup)
         requestAnimationFrame(() => {
             this.updateHandlePosition();
@@ -507,10 +516,7 @@ class LampApp {
         }
     }
     
-    toggleLamp() {
-        if (this.isAnimating || this.isDragging) return;
-        this.toggleLampState();
-    }
+    // This method is now replaced by the enhanced async version below
     
     animateLampSwing() {
         // Create a gentle swinging motion
@@ -776,6 +782,123 @@ class LampApp {
             }
         } catch (error) {
             document.title = 'Lamp App - No Connection';
+        }
+    }
+    
+    // Dashboard methods
+    async loadDashboard() {
+        try {
+            const response = await fetch('/api/v1/lamp/dashboard');
+            if (response.ok) {
+                const data = await response.json();
+                this.updateDashboard(data);
+            }
+        } catch (error) {
+            console.warn('Dashboard update failed:', error);
+        }
+    }
+    
+    updateDashboard(data) {
+        // Update current state
+        const currentStateEl = document.getElementById('currentState');
+        if (currentStateEl) {
+            currentStateEl.textContent = data.current_state.is_on ? '🔥 ON' : '🌙 OFF';
+            currentStateEl.style.color = data.current_state.is_on ? '#f1c40f' : '#95a5a6';
+        }
+        
+        // Update today's toggles
+        const todayTogglesEl = document.getElementById('todayToggles');
+        if (todayTogglesEl) {
+            todayTogglesEl.textContent = data.today_stats ? data.today_stats.total_toggles : '0';
+        }
+        
+        // Update lifetime toggles
+        const lifetimeTogglesEl = document.getElementById('lifetimeToggles');
+        if (lifetimeTogglesEl) {
+            lifetimeTogglesEl.textContent = data.total_lifetime_toggles.toLocaleString();
+        }
+        
+        // Update unique sessions
+        const uniqueSessionsEl = document.getElementById('uniqueSessions');
+        if (uniqueSessionsEl) {
+            uniqueSessionsEl.textContent = data.today_stats ? data.today_stats.unique_sessions : '0';
+        }
+        
+        // Update recent activities
+        this.updateRecentActivities(data.recent_activities);
+    }
+    
+    updateRecentActivities(activities) {
+        const activityListEl = document.getElementById('activityList');
+        if (!activityListEl) return;
+        
+        if (!activities || activities.length === 0) {
+            activityListEl.innerHTML = '<div class="loading-state">No recent activity</div>';
+            return;
+        }
+        
+        const activitiesHtml = activities.map(activity => {
+            const date = new Date(activity.timestamp);
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const iconClass = activity.action === 'on' ? 'on' : 'off';
+            const actionText = activity.action === 'on' ? 'Turned ON' : 'Turned OFF';
+            
+            return `
+                <div class="activity-item">
+                    <div class="activity-action">
+                        <div class="activity-icon ${iconClass}"></div>
+                        <span class="activity-text">${actionText}</span>
+                    </div>
+                    <span class="activity-time">${timeStr}</span>
+                </div>
+            `;
+        }).join('');
+        
+        activityListEl.innerHTML = activitiesHtml;
+    }
+    
+    // Enhanced toggle method to include session tracking
+    async toggleLamp() {
+        if (this.isAnimating) return;
+        
+        this.isAnimating = true;
+        
+        try {
+            // Generate or reuse session ID
+            if (!this.sessionId) {
+                this.sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            const response = await fetch('/api/v1/lamp/toggle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': this.sessionId
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.isOn = data.is_on;
+                
+                // Update UI immediately
+                this.updateTheme();
+                document.title = `Lamp App - ${data.status.toUpperCase()}`;
+                
+                // Refresh dashboard data after a short delay
+                setTimeout(() => {
+                    this.loadDashboard();
+                }, 1000);
+                
+            } else {
+                console.error('Toggle failed:', response.status);
+            }
+        } catch (error) {
+            console.error('Toggle error:', error);
+        } finally {
+            setTimeout(() => {
+                this.isAnimating = false;
+            }, 800);
         }
     }
 

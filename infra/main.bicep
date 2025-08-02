@@ -24,8 +24,8 @@ param resourceGroupName string = 'rg-python-webapp'
 param environmentName string
 
 @description('The Azure region where resources will be deployed')
-@allowed(['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'southeastasia'])
-param location string = 'eastus2'
+@allowed(['centralus', 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'southeastasia'])
+param location string = 'centralus'
 
 @description('The SKU for the App Service Plan')
 @allowed(['F1', 'D1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P1v3', 'P2v3', 'P3v3'])
@@ -65,6 +65,11 @@ var logAnalyticsWorkspaceName = '${resourcePrefix}-logs-${resourceToken}'
 var applicationInsightsName = '${resourcePrefix}-ai-${resourceToken}'
 var managedIdentityName = '${resourcePrefix}-identity-${resourceToken}'
 var keyVaultName = '${resourcePrefix}-kv-${resourceToken}'
+var postgresServerName = '${resourcePrefix}-postgres-${resourceToken}'
+var postgresDatabaseName = '${resourcePrefix}_db_${resourceToken}'
+
+// Generate secure password for PostgreSQL Server
+var postgresAdminPassword = '${toUpper(uniqueString(subscription().id, resourceGroupName))}-${toLower(uniqueString(subscription().id, environmentName))}-Pg1!'
 
 // Tags for resource management
 var commonTags = {
@@ -128,8 +133,27 @@ module keyVault 'modules/keyvault.bicep' = {
 }
 
 // =============================================================================
-// Azure Container Registry Module Deployment
+// PostgreSQL Database Module Deployment
 // =============================================================================
+module postgresDatabase 'modules/postgresql.bicep' = {
+  name: 'postgresql-deployment'
+  scope: resourceGroup
+  params: {
+    postgresServerName: postgresServerName
+    postgresDatabaseName: postgresDatabaseName
+    location: location
+    tags: commonTags
+    administratorLogin: 'postgres'
+    administratorLoginPassword: postgresAdminPassword
+    keyVaultName: keyVault.outputs.keyVaultName
+    environmentName: environmentName
+  }
+}
+
+// =============================================================================
+// Azure Container Registry Module Deployment (TEMPORARILY DISABLED FOR INITIAL DEPLOYMENT)
+// =============================================================================
+/*
 module acr 'modules/acr.bicep' = {
   name: 'acr-deployment'
   scope: resourceGroup
@@ -147,6 +171,19 @@ module acr 'modules/acr.bicep' = {
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
+*/
+
+// Simple ACR without build script for initial deployment
+module simpleAcr 'modules/simple-acr.bicep' = {
+  name: 'simple-acr-deployment'
+  scope: resourceGroup
+  params: {
+    containerRegistryName: containerRegistryName
+    location: location
+    containerRegistrySku: containerRegistrySku
+    tags: commonTags
+  }
+}
 
 // =============================================================================
 // App Service Module Deployment
@@ -161,7 +198,7 @@ module appService 'modules/appservice.bicep' = {
     appServicePlanSku: appServicePlanSku
     tags: commonTags
     appPort: appPort
-    containerRegistryLoginServer: acr.outputs.containerRegistryLoginServer
+    containerRegistryLoginServer: simpleAcr.outputs.containerRegistryLoginServer
     applicationInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
     keyVaultUri: keyVault.outputs.keyVaultUri
@@ -169,6 +206,7 @@ module appService 'modules/appservice.bicep' = {
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
     managedIdentityClientId: managedIdentity.outputs.managedIdentityClientId
+    postgresConnectionStringSecretName: postgresDatabase.outputs.connectionStringSecretName
   }
 }
 
@@ -240,3 +278,15 @@ output keyVaultName string = keyVault.outputs.keyVaultName
 
 @description('The URI of the Key Vault')
 output keyVaultUri string = keyVault.outputs.keyVaultUri
+
+@description('The name of the PostgreSQL Server')
+output postgresServerName string = postgresDatabase.outputs.serverName
+
+@description('The fully qualified domain name of the PostgreSQL Server')
+output postgresServerFqdn string = postgresDatabase.outputs.serverFqdn
+
+@description('The name of the PostgreSQL Database')
+output postgresDatabaseName string = postgresDatabase.outputs.databaseName
+
+@description('The connection string secret name in Key Vault')
+output postgresConnectionStringSecretName string = postgresDatabase.outputs.connectionStringSecretName

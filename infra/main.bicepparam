@@ -9,7 +9,7 @@ using './main.bicep'
 
 // Environment Configuration
 param environmentName = 'dev'
-param location = 'eastus2'
+param location = 'centralus'
 param resourceGroupName = 'rg-lamp-web-app-dev'
 
 // App Service Configuration  

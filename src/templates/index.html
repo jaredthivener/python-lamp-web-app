@@ -79,6 +79,37 @@
             </div>
         </div>
 
+        <!-- Statistics Dashboard -->
+        <div class="stats-container">
+            <div class="stats-header">
+                <h2>💡 Lamp Statistics</h2>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Today's Toggles</div>
+                    <div class="stat-value" id="todayToggles">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Current State</div>
+                    <div class="stat-value" id="currentState">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Lifetime</div>
+                    <div class="stat-value" id="lifetimeToggles">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Unique Sessions</div>
+                    <div class="stat-value" id="uniqueSessions">--</div>
+                </div>
+            </div>
+            <div class="recent-activities">
+                <h3>Recent Activity</h3>
+                <div id="activityList" class="activity-list">
+                    <!-- Activities will be loaded here -->
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <div class="particles" id="particles"></div>

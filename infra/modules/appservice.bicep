@@ -48,6 +48,9 @@ param managedIdentityPrincipalId string
 @description('The client ID of the user-assigned managed identity')
 param managedIdentityClientId string
 
+@description('The PostgreSQL connection string secret name in Key Vault')
+param postgresConnectionStringSecretName string
+
 // =============================================================================
 // App Service Plan (Linux)
 // =============================================================================
@@ -144,6 +147,10 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
         {
           name: 'WEBSITE_WEBDEPLOY_USE_SCM'
           value: 'true'
+        }
+        {
+          name: 'POSTGRES_CONNECTION_STRING'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${postgresConnectionStringSecretName}/)'
         }
       ]
       cors: {
