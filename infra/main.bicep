@@ -213,6 +213,7 @@ module dashboard 'modules/monitor/dashboard.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServiceId: appService.outputs.appServiceId
     appServiceName: appService.outputs.appServiceName
+    appServicePlanId: appService.outputs.appServicePlanId
     postgresServerId: postgresDatabase.outputs.serverId
     postgresServerName: postgresDatabase.outputs.serverName
   }
