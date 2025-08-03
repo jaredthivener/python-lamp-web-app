@@ -39,7 +39,7 @@ param logAnalyticsWorkspaceId string
 // =============================================================================
 // Azure Database for PostgreSQL - Flexible Server (Free Tier)
 // =============================================================================
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2025-01-01-preview' = {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2025-06-01-preview' = {
   name: postgresServerName
   location: location
   tags: tags
@@ -88,7 +88,7 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
 // Firewall Rules
 // =============================================================================
 // Allow Azure services to access the server
-resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-01-01-preview' = {
+resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-06-01-preview' = {
   parent: postgresServer
   name: 'AllowAzureServices'
   properties: {
@@ -98,7 +98,7 @@ resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallR
 }
 
 // Allow all IPs for development (you may want to restrict this in production)
-resource allowAllIPs 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-01-01-preview' = if (environmentName == 'dev') {
+resource allowAllIPs 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-06-01-preview' = if (environmentName == 'dev') {
   parent: postgresServer
   name: 'AllowAllIPs'
   properties: {
@@ -165,7 +165,7 @@ resource postgresDiagnosticSetting 'Microsoft.Insights/diagnosticSettings@2021-0
 }
 
 // Configure PostgreSQL server parameters for enhanced logging
-resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'log_min_duration_statement'
   properties: {
@@ -174,7 +174,7 @@ resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/conf
   }
 }
 
-resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'log_statement'
   properties: {
@@ -183,7 +183,7 @@ resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@
   }
 }
 
-resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'log_connections'
   properties: {
@@ -192,7 +192,7 @@ resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configuration
   }
 }
 
-resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'log_disconnections'
   properties: {
@@ -202,7 +202,7 @@ resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurat
 }
 
 // Enable Query Store for performance insights
-resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'pg_qs.query_capture_mode'
   properties: {
@@ -211,7 +211,7 @@ resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurat
   }
 }
 
-resource queryStoreMaxQueryTextLength 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+resource queryStoreMaxQueryTextLength 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
   parent: postgresServer
   name: 'pg_qs.max_query_text_length'
   properties: {

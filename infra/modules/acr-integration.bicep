@@ -22,7 +22,7 @@ param webhookServiceUri string
 param location string
 
 // Reference to existing container registry
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' existing = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-05-01-preview' existing = {
   name: containerRegistryName
 }
 
@@ -42,7 +42,7 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 // =============================================================================
 // Container Registry Webhook for Continuous Deployment
 // =============================================================================
-resource containerRegistryWebhook 'Microsoft.ContainerRegistry/registries/webhooks@2025-04-01' = {
+resource containerRegistryWebhook 'Microsoft.ContainerRegistry/registries/webhooks@2025-05-01-preview' = {
   name: 'lampappwebhook'
   parent: containerRegistry
   location: location

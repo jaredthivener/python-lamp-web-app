@@ -40,7 +40,7 @@ param managedIdentityPrincipalId string
 // =============================================================================
 // Azure Container Registry
 // =============================================================================
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-05-01-preview' = {
   name: containerRegistryName
   location: location
   tags: tags

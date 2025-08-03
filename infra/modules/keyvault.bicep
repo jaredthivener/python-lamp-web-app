@@ -39,7 +39,7 @@ param managedIdentityPrincipalId string
 // =============================================================================
 // Azure Key Vault
 // =============================================================================
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2024-12-01-preview' = {
   name: keyVaultName
   location: location
   tags: tags
@@ -66,7 +66,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 // =============================================================================
 // Key Vault Secret for Application Insights Connection String
 // =============================================================================
-resource appInsightsConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(applicationInsightsConnectionString)) {
+resource appInsightsConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-12-01-preview' = if (!empty(applicationInsightsConnectionString)) {
   parent: keyVault
   name: 'ApplicationInsights--ConnectionString'
   properties: {
