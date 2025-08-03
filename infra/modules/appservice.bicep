@@ -126,7 +126,9 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: !empty(keyVaultUri) ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ApplicationInsights--ConnectionString/)' : applicationInsightsConnectionString
+          value: !empty(keyVaultUri)
+            ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ApplicationInsights--ConnectionString/)'
+            : applicationInsightsConnectionString
         }
         {
           name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
@@ -147,6 +149,18 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
         {
           name: 'WEBSITE_WEBDEPLOY_USE_SCM'
           value: 'true'
+        }
+        {
+          name: 'KEY_VAULT_URI'
+          value: keyVaultUri
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: managedIdentityClientId
+        }
+        {
+          name: 'AzureKeyVaultReferenceCredentialClientId'
+          value: managedIdentityClientId
         }
         {
           name: 'POSTGRES_CONNECTION_STRING'
