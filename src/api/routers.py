@@ -10,9 +10,9 @@ import uuid
 # Database imports
 from database.ha_repository import HALampRepository
 from database.models import (
-    LampActivityResponse, 
-    LampStatisticsResponse, 
-    CurrentLampStateResponse, 
+    LampActivityResponse,
+    LampStatisticsResponse,
+    CurrentLampStateResponse,
     LampDashboardResponse
 )
 
@@ -43,7 +43,7 @@ async def get_lamp_status():
     try:
         repo = HALampRepository()
         current_state = repo.get_current_state()
-        
+
         return LampStatusResponse(
             status="on" if current_state.is_on else "off",
             is_on=current_state.is_on
@@ -58,17 +58,20 @@ async def toggle_lamp(request: Request):
     try:
         repo = HALampRepository()
         session_id, user_agent, ip_address = get_client_info(request)
-        
+
         # Get current state before toggle
         current_state = repo.get_current_state()
         previous_status = "on" if current_state.is_on else "off"
-        
+
         # Toggle the lamp
         new_state = repo.toggle_lamp(session_id, user_agent, ip_address)
         new_status = "on" if new_state.is_on else "off"
-        
+
         message = f"Lamp turned {new_status} successfully!"
-        
+
+        # Log the lamp toggle event for Application Insights
+        logger.info(f"💡 Lamp toggled: {previous_status} → {new_status} by session {session_id[:8]}... from {ip_address}")
+
         return LampActionResponse(
             status=new_status,
             is_on=new_state.is_on,
@@ -96,10 +99,10 @@ async def get_recent_activities(limit: int = 10):
     try:
         if limit > 100:  # Prevent excessive data retrieval
             limit = 100
-            
+
         repo = HALampRepository()
         activities = repo.get_recent_activities(limit)
-        
+
         return [
             LampActivityResponse(
                 id=activity.id,
@@ -119,10 +122,10 @@ async def get_today_statistics():
     try:
         repo = HALampRepository()
         stats = repo.get_daily_statistics()
-        
+
         if not stats:
             return None
-            
+
         return LampStatisticsResponse(
             id=stats.id,
             date=stats.date,

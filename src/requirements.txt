@@ -12,12 +12,6 @@ psycopg2-binary==2.9.10
 azure-keyvault-secrets==4.8.0
 azure-identity==1.19.0
 
-# Application Insights for monitoring
-azure-monitor-opentelemetry==1.2.0
-opentelemetry-instrumentation-fastapi==0.44b0
-opentelemetry-instrumentation-psycopg2==0.44b0
-opentelemetry-instrumentation-requests==0.44b0
-
 # Additional utilities
 python-dotenv==1.0.1
 

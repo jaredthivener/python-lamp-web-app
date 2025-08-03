@@ -41,9 +41,7 @@ param managedIdentityPrincipalId string
 @description('The principal ID of the App Service managed identity for ACR access')
 param appServicePrincipalId string
 
-@description('The service URI for the webhook (optional - can be empty string to skip webhook)')
-@secure()
-param webhookServiceUri string
+// Note: Webhook will be created separately to avoid circular dependencies
 
 // =============================================================================
 // Azure Container Registry
@@ -138,27 +136,6 @@ resource appServiceAcrPullRoleAssignment 'Microsoft.Authorization/roleAssignment
     principalId: appServicePrincipalId
     principalType: 'ServicePrincipal'
   }
-}
-
-// =============================================================================
-// Container Registry Webhook for Continuous Deployment (Optional)
-// =============================================================================
-resource containerRegistryWebhook 'Microsoft.ContainerRegistry/registries/webhooks@2023-07-01' = if (!empty(webhookServiceUri)) {
-  name: 'lampappwebhook'
-  parent: containerRegistry
-  location: location
-  properties: {
-    serviceUri: webhookServiceUri
-    actions: ['push']
-    scope: '${imageName}:*'
-    status: 'enabled'
-    customHeaders: {
-      'Content-Type': 'application/json'
-    }
-  }
-  dependsOn: [
-    appServiceAcrPullRoleAssignment
-  ]
 }
 
 // =============================================================================
