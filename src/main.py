@@ -8,6 +8,12 @@ import uvicorn
 import os
 import logging
 
+# Azure Application Insights imports
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
 # Import routers
 from api import router as lamp_router
 
@@ -18,6 +24,25 @@ from database.ha_repository import HALampRepository
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure Application Insights
+APPLICATIONINSIGHTS_CONNECTION_STRING = os.getenv('APPLICATIONINSIGHTS_CONNECTION_STRING')
+
+if APPLICATIONINSIGHTS_CONNECTION_STRING:
+    try:
+        # Configure Azure Monitor OpenTelemetry
+        configure_azure_monitor(connection_string=APPLICATIONINSIGHTS_CONNECTION_STRING)
+
+        # Configure automatic instrumentation
+        FastAPIInstrumentor().instrument()
+        RequestsInstrumentor().instrument()
+        Psycopg2Instrumentor().instrument()
+
+        logger.info("Application Insights configured successfully")
+    except Exception as e:
+        logger.error(f"Failed to configure Application Insights: {e}")
+else:
+    logger.warning("APPLICATIONINSIGHTS_CONNECTION_STRING not found - Application Insights disabled")
 
 # Response models
 class HealthResponse(BaseModel):
@@ -77,7 +102,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Application Insights is configured globally via OpenTelemetry instrumentation
+# No additional middleware needed as FastAPIInstrumentor handles it automatically
+
 # Get the directory of the current file (src)
+current_dir = os.path.dirname(os.path.abspath(__file__))
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 app.mount("/static", StaticFiles(directory=os.path.join(current_dir, "static")), name="static")

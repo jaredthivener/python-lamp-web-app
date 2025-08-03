@@ -1,7 +1,8 @@
 // =============================================================================
-// Container Registry Module
+// Container Registry Module (Combined)
 // =============================================================================
-// This module creates an Azure Container Registry with security best practices
+// This module creates an Azure Container Registry with security best practices,
+// role assignments, and webhook integration for continuous deployment
 // =============================================================================
 
 @description('The name of the Container Registry')
@@ -37,6 +38,13 @@ param managedIdentityId string
 @description('The principal ID of the user-assigned managed identity for deployment scripts')
 param managedIdentityPrincipalId string
 
+@description('The principal ID of the App Service managed identity for ACR access')
+param appServicePrincipalId string
+
+@description('The service URI for the webhook (optional - can be empty string to skip webhook)')
+@secure()
+param webhookServiceUri string
+
 // =============================================================================
 // Azure Container Registry
 // =============================================================================
@@ -51,79 +59,115 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
     adminUserEnabled: false
     policies: {
       quarantinePolicy: {
-        status: containerRegistrySku == 'Premium' ? 'enabled' : 'disabled'
+        status: 'disabled'
       }
       trustPolicy: {
         type: 'Notary'
-        status: containerRegistrySku == 'Premium' ? 'enabled' : 'disabled'
+        status: 'disabled'
       }
       retentionPolicy: {
         days: 7
-        status: containerRegistrySku != 'Basic' ? 'enabled' : 'disabled'
-      }
-      exportPolicy: {
-        status: 'enabled'
+        status: 'disabled'
       }
     }
     encryption: {
       status: 'disabled'
     }
-    dataEndpointEnabled: containerRegistrySku == 'Premium' ? true : false
+    dataEndpointEnabled: false
     publicNetworkAccess: 'Enabled'
     networkRuleBypassOptions: 'AzureServices'
-    networkRuleSet: containerRegistrySku == 'Basic' ? null : {
-      defaultAction: 'Allow'
-      ipRules: []
-    }
-    zoneRedundancy: containerRegistrySku == 'Premium' ? 'Enabled' : 'Disabled'
+    zoneRedundancy: 'Disabled'
   }
 }
 
 // =============================================================================
-// Role Assignment: Grant Managed Identity ACR Push permissions
+// Role Assignments for Container Registry Access
 // =============================================================================
+
+// Grant the managed identity AcrPush role for building images
 resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, managedIdentityPrincipalId, 'AcrPush')
   scope: containerRegistry
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec') // AcrPush role
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '8311e382-0749-4cb8-b61a-304f252e45ec'
+    ) // AcrPush role
     principalId: managedIdentityPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// =============================================================================
-// Role Assignment: Grant Managed Identity Contributor permissions on ACR
-// =============================================================================
+// Grant the managed identity Contributor role on the registry for full management
 resource acrContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, managedIdentityPrincipalId, 'Contributor')
   scope: containerRegistry
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor role
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    ) // Contributor role
     principalId: managedIdentityPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// =============================================================================
-// Role Assignment: Grant Managed Identity Reader permissions on Resource Group
-// =============================================================================
+// Grant the managed identity Reader role on the resource group for listing resources
 resource resourceGroupReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(resourceGroup().id, managedIdentityPrincipalId, 'Reader')
   scope: resourceGroup()
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7') // Reader role
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+    ) // Reader role
     principalId: managedIdentityPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
 
+// Grant App Service managed identity AcrPull access for pulling images
+resource appServiceAcrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, appServicePrincipalId, 'AcrPull')
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    ) // AcrPull role
+    principalId: appServicePrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // =============================================================================
-// Deployment Script to Build and Push Image
+// Container Registry Webhook for Continuous Deployment (Optional)
+// =============================================================================
+resource containerRegistryWebhook 'Microsoft.ContainerRegistry/registries/webhooks@2023-07-01' = if (!empty(webhookServiceUri)) {
+  name: 'lampappwebhook'
+  parent: containerRegistry
+  location: location
+  properties: {
+    serviceUri: webhookServiceUri
+    actions: ['push']
+    scope: '${imageName}:*'
+    status: 'enabled'
+    customHeaders: {
+      'Content-Type': 'application/json'
+    }
+  }
+  dependsOn: [
+    appServiceAcrPullRoleAssignment
+  ]
+}
+
+// =============================================================================
+// Deployment Script for Building Container Image
 // =============================================================================
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'build-push-${take(uniqueString(containerRegistry.id, location, deployment().name), 8)}'
+  name: '${containerRegistryName}-build-script'
   location: location
+  tags: tags
   kind: 'AzureCLI'
   identity: {
     type: 'UserAssigned'
@@ -133,26 +177,20 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   }
   properties: {
     azCliVersion: '2.75.0'
-    timeout: 'PT45M'
+    timeout: 'PT15M'
     retentionInterval: 'PT1H'
-    cleanupPreference: 'OnExpiration'
-    forceUpdateTag: uniqueString(containerRegistry.id, deployment().name)
     environmentVariables: [
       {
         name: 'ACR_NAME'
-        value: containerRegistry.name
+        value: containerRegistryName
       }
       {
-        name: 'RESOURCE_GROUP'
-        value: resourceGroup().name
-      }
-      {
-        name: 'SUBSCRIPTION_ID'
-        value: subscription().subscriptionId
-      }
-      {
-        name: 'SOURCE_URL'
+        name: 'SOURCE_LOCATION'
         value: sourceRepositoryUrl
+      }
+      {
+        name: 'BRANCH'
+        value: sourceBranch
       }
       {
         name: 'IMAGE_NAME'
@@ -163,99 +201,78 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
         value: imageTag
       }
       {
-        name: 'DOCKERFILE_PATH' 
+        name: 'DOCKERFILE_PATH'
         value: dockerfilePath
-      }
-      {
-        name: 'SOURCE_BRANCH'
-        value: sourceBranch
       }
     ]
     scriptContent: '''
       #!/bin/bash
       set -e
 
-      echo "=== Azure Container Registry Build Script ==="
-      echo "Subscription: $SUBSCRIPTION_ID"
-      echo "Resource Group: $RESOURCE_GROUP"
+      echo "=== Starting Container Image Build ==="
       echo "Registry: $ACR_NAME"
-      echo "Source: $SOURCE_URL"
+      echo "Source: $SOURCE_LOCATION"
+      echo "Branch: $BRANCH"
       echo "Image: $IMAGE_NAME:$IMAGE_TAG"
-      echo "Branch: $SOURCE_BRANCH"
       echo "Dockerfile: $DOCKERFILE_PATH"
-      
-      # Set the subscription context
-      echo "Setting subscription context..."
-      az account set --subscription "$SUBSCRIPTION_ID"
-      
-      # Verify current context
-      echo "Current context:"
-      az account show --query "{subscriptionId:id, user:user.name}" -o table
-      
-      # Brief wait for role assignments to propagate
-      echo "Waiting for role assignments to propagate..."
-      sleep 30
-      
-      # Since ACR is already created by Bicep, let's directly verify access
-      echo "Verifying ACR exists and is accessible..."
-      if ! az acr show --name "$ACR_NAME" >/dev/null 2>&1; then
-        echo "❌ ERROR: Cannot access ACR."
-        echo "Trying without resource group parameter..."
-        if ! az acr show --name "$ACR_NAME" >/dev/null 2>&1; then
-          echo "❌ ERROR: ACR not found: $ACR_NAME"
-          echo "Available ACRs:"
-          az acr list --query "[].{name:name, resourceGroup:resourceGroup}" -o table || true
-          exit 1
+      echo "================================================"
+
+      # Get the login server
+      LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)
+      echo "Login server: $LOGIN_SERVER"
+
+      # Note: We don't need to login to ACR for 'az acr build' as it uses managed identity automatically
+      echo "Using managed identity for ACR authentication..."
+
+      # Check if image already exists
+      if az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$IMAGE_TAG" >/dev/null 2>&1; then
+        echo "⚠️  Image $IMAGE_NAME:$IMAGE_TAG already exists in registry"
+        echo "Checking if rebuild is needed..."
+
+        # Get existing image creation time
+        EXISTING_CREATED=$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$IMAGE_TAG" --query "createdTime" --output tsv 2>/dev/null || echo "")
+
+        if [ -n "$EXISTING_CREATED" ]; then
+          echo "Existing image created: $EXISTING_CREATED"
+          echo "Proceeding with rebuild to ensure latest code..."
         fi
       fi
-      
-      # Get ACR details
-      ACR_STATE=$(az acr show --name "$ACR_NAME" --query "provisioningState" -o tsv)
-      LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query "loginServer" -o tsv)
-      
-      echo "✓ ACR found: $ACR_NAME"
-      echo "✓ Provisioning State: $ACR_STATE"
-      echo "✓ Login Server: $LOGIN_SERVER"
-      
-      # For ACR Tasks, we don't need to login explicitly
-      echo "✓ Ready to proceed with ACR Tasks build"
 
-      # Build and push using ACR build directly from GitHub
-      echo "Starting container image build using ACR Tasks..."
-      echo "Building image: $IMAGE_NAME:$IMAGE_TAG from $SOURCE_URL#$SOURCE_BRANCH"
-      
-      # Use ACR build to build from the source repository with retry logic
-      # ACR Tasks uses the managed identity automatically for authentication
+      # Build and push the image
+      echo "Building and pushing container image..."
+      echo "Command: az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG --file $DOCKERFILE_PATH $SOURCE_LOCATION#$BRANCH"
+
+      # Run the build with proper error handling
+      MAX_RETRIES=3
       RETRY_COUNT=0
-      MAX_BUILD_RETRIES=3
-      
-      while [ $RETRY_COUNT -lt $MAX_BUILD_RETRIES ]; do
-        echo "Build attempt $((RETRY_COUNT + 1))/$MAX_BUILD_RETRIES"
-        
+
+      while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        echo "Build attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES..."
+
         if az acr build \
           --registry "$ACR_NAME" \
           --image "$IMAGE_NAME:$IMAGE_TAG" \
           --file "$DOCKERFILE_PATH" \
-          --platform linux/amd64 \
-          "$SOURCE_URL#$SOURCE_BRANCH"; then
+          "$SOURCE_LOCATION#$BRANCH" \
+          --verbose; then
           echo "✓ Build completed successfully!"
           break
         else
           RETRY_COUNT=$((RETRY_COUNT + 1))
-          if [ $RETRY_COUNT -lt $MAX_BUILD_RETRIES ]; then
-            echo "⚠️  Build failed, retrying in 30 seconds... ($RETRY_COUNT/$MAX_BUILD_RETRIES)"
+          if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo "Build failed, retrying in 30 seconds..."
             sleep 30
           else
-            echo "❌ Build failed after $MAX_BUILD_RETRIES attempts"
+            echo "❌ Build failed after $MAX_RETRIES attempts"
             exit 1
           fi
         fi
       done
-      
+
       # Verify the image exists
       echo "Verifying image was pushed..."
       sleep 10  # Brief wait for image to be available
-      
+
       if az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$IMAGE_TAG" >/dev/null 2>&1; then
         echo "✓ Image $IMAGE_NAME:$IMAGE_TAG successfully available in registry"
         echo "Available tags:"
@@ -281,7 +298,6 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   ]
 }
 
-
 // =============================================================================
 // Outputs
 // =============================================================================
@@ -300,7 +316,7 @@ output containerRegistry object = containerRegistry
 @description('The name of the built image')
 output imageName string = imageName
 
-@description('The tag of the built image') 
+@description('The tag of the built image')
 output imageTag string = imageTag
 
 @description('The full image name with registry URL')
@@ -317,3 +333,6 @@ output dockerfilePath string = dockerfilePath
 
 @description('The deployment script name')
 output buildScriptName string = buildScript.name
+
+@description('The resource ID of the App Service ACR role assignment')
+output appServiceRoleAssignmentId string = appServiceAcrPullRoleAssignment.id

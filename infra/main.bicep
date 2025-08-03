@@ -68,6 +68,7 @@ var managedIdentityName = '${resourcePrefix}-identity-${resourceToken}'
 var keyVaultName = '${resourcePrefix}-kv-${resourceToken}'
 var postgresServerName = '${resourcePrefix}-postgres-${resourceToken}'
 var postgresDatabaseName = '${resourcePrefix}_db_${resourceToken}'
+var dashboardName = '${resourcePrefix}-dashboard-${resourceToken}'
 
 // Generate secure password for PostgreSQL Server
 var postgresAdminPassword = '${toUpper(uniqueString(subscription().id, resourceGroupName))}-${toLower(uniqueString(subscription().id, environmentName))}-Pg1!'
@@ -89,11 +90,10 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
   tags: commonTags
 }
 
-
 // =============================================================================
 // Monitoring Module Deployment
 // =============================================================================
-module monitoring 'modules/monitoring.bicep' = {
+module monitoring 'modules/monitor/monitoring.bicep' = {
   name: 'monitoring-deployment'
   scope: resourceGroup
   params: {
@@ -108,7 +108,7 @@ module monitoring 'modules/monitoring.bicep' = {
 // =============================================================================
 // Managed Identity Module Deployment
 // =============================================================================
-module managedIdentity 'modules/managed-identity.bicep' = {
+module managedIdentity 'modules/security/managed-identity.bicep' = {
   name: 'managed-identity-deployment'
   scope: resourceGroup
   params: {
@@ -121,7 +121,7 @@ module managedIdentity 'modules/managed-identity.bicep' = {
 // =============================================================================
 // Key Vault Module Deployment
 // =============================================================================
-module keyVault 'modules/keyvault.bicep' = {
+module keyVault 'modules/security/keyvault.bicep' = {
   name: 'keyvault-deployment'
   scope: resourceGroup
   params: {
@@ -136,7 +136,7 @@ module keyVault 'modules/keyvault.bicep' = {
 // =============================================================================
 // PostgreSQL Database Module Deployment
 // =============================================================================
-module postgresDatabase 'modules/postgresql.bicep' = {
+module postgresDatabase 'modules/database/postgresql.bicep' = {
   name: 'postgresql-deployment'
   scope: resourceGroup
   params: {
@@ -153,9 +153,9 @@ module postgresDatabase 'modules/postgresql.bicep' = {
 }
 
 // =============================================================================
-// Azure Container Registry Module Deployment
+// Azure Container Registry Module Deployment (Combined)
 // =============================================================================
-module acr 'modules/acr.bicep' = {
+module acr 'modules/container/acr.bicep' = {
   name: 'acr-deployment'
   scope: resourceGroup
   params: {
@@ -170,13 +170,15 @@ module acr 'modules/acr.bicep' = {
     dockerfilePath: dockerfilePath
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    appServicePrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    webhookServiceUri: '' // Will be created separately to avoid circular dependency
   }
 }
 
 // =============================================================================
 // App Service Module Deployment
 // =============================================================================
-module appService 'modules/appservice.bicep' = {
+module appService 'modules/compute/appservice.bicep' = {
   name: 'appservice-deployment'
   scope: resourceGroup
   params: {
@@ -199,20 +201,26 @@ module appService 'modules/appservice.bicep' = {
 }
 
 // =============================================================================
-// ACR Integration Module (Role Assignment and Webhook)
+// Azure Dashboard Module Deployment
 // =============================================================================
-module acrIntegration 'modules/acr-integration.bicep' = {
-  name: 'acr-integration-deployment'
+module dashboard 'modules/monitor/dashboard.bicep' = {
+  name: 'dashboard-deployment'
   scope: resourceGroup
   params: {
-    containerRegistryId: acr.outputs.containerRegistryId
-    containerRegistryName: acr.outputs.containerRegistryName
-    appServicePrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    webhookServiceUri: 'https://${appService.outputs.appServiceName}.scm.azurewebsites.net/api/registry/webhook'
+    dashboardName: dashboardName
     location: location
+    tags: commonTags
+    applicationInsightsId: monitoring.outputs.applicationInsightsId
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    appServiceId: appService.outputs.appServiceId
+    appServiceName: appService.outputs.appServiceName
+    postgresServerId: postgresDatabase.outputs.serverId
+    postgresServerName: postgresDatabase.outputs.serverName
   }
 }
 
+// =============================================================================
+// ACR Integration Module (Role Assignment and Webhook)
 // =============================================================================
 // Outputs
 // =============================================================================
@@ -281,3 +289,9 @@ output postgresDatabaseName string = postgresDatabase.outputs.databaseName
 
 @description('The connection string secret name in Key Vault')
 output postgresConnectionStringSecretName string = postgresDatabase.outputs.connectionStringSecretName
+
+@description('The name of the Azure Dashboard')
+output dashboardName string = dashboard.outputs.dashboardName
+
+@description('The URL to access the monitoring dashboard')
+output dashboardUrl string = dashboard.outputs.dashboardUrl

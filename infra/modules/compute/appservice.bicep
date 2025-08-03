@@ -131,6 +131,10 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
             : applicationInsightsConnectionString
         }
         {
+          name: 'AZURE_SUBSCRIPTION_ID'
+          value: subscription().subscriptionId
+        }
+        {
           name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
           value: '~3'
         }
