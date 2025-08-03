@@ -76,7 +76,7 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
   name: appServiceName
   location: location
   tags: union(tags, {
-    'azd-service-name': 'lamp-web-app'
+    'azd-service-name': 'api'
   })
   kind: 'app,linux,container'
   identity: {

@@ -5,7 +5,7 @@ metadata:
   template: python-lamp-web-app@0.0.1-beta
 services:
   api:
-    project: .
+    project: src
     language: python
     host: appservice
 
