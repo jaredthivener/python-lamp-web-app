@@ -1,3 +1,21 @@
+# Configure Azure Monitor OpenTelemetry (must be first import for auto-instrumentation)
+import os
+from azure.monitor.opentelemetry import configure_azure_monitor
+
+# Configure Application Insights telemetry collection
+connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+if connection_string:
+    try:
+        configure_azure_monitor(
+            connection_string=connection_string,
+            enable_live_metrics=True,
+        )
+        print("✓ Azure Monitor OpenTelemetry configured successfully")
+    except Exception as e:
+        print(f"⚠️ Failed to configure Azure Monitor: {e}")
+else:
+    print("⚠️ APPLICATIONINSIGHTS_CONNECTION_STRING not found")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
@@ -5,7 +23,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import uvicorn
-import os
 import logging
 
 # Import routers
