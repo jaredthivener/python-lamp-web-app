@@ -39,7 +39,7 @@ param logAnalyticsWorkspaceId string
 // =============================================================================
 // Azure Database for PostgreSQL - Flexible Server (Free Tier)
 // =============================================================================
-resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2025-06-01-preview' = {
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: postgresServerName
   location: location
   tags: tags
@@ -50,7 +50,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2025-06-01-pr
   properties: {
     administratorLogin: administratorLogin
     administratorLoginPassword: administratorLoginPassword
-    version: '15'  // PostgreSQL 15
+    version: '17'  // PostgreSQL 17
     storage: {
       storageSizeGB: 32  // Free tier: 32GB storage
       iops: 120
@@ -75,7 +75,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2025-06-01-pr
 // =============================================================================
 // PostgreSQL Database
 // =============================================================================
-resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2025-01-01-preview' = {
+resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
   parent: postgresServer
   name: postgresDatabaseName
   properties: {
@@ -88,7 +88,7 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
 // Firewall Rules
 // =============================================================================
 // Allow Azure services to access the server
-resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-06-01-preview' = {
+resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
   parent: postgresServer
   name: 'AllowAzureServices'
   properties: {
@@ -98,7 +98,7 @@ resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallR
 }
 
 // Allow all IPs for development (you may want to restrict this in production)
-resource allowAllIPs 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-06-01-preview' = if (environmentName == 'dev') {
+resource allowAllIPs 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (environmentName == 'dev') {
   parent: postgresServer
   name: 'AllowAllIPs'
   properties: {
@@ -164,8 +164,15 @@ resource postgresDiagnosticSetting 'Microsoft.Insights/diagnosticSettings@2021-0
   }
 }
 
-// Configure PostgreSQL server parameters for enhanced logging
-resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+// =============================================================================
+// PostgreSQL Server Configuration (Simplified for Development)
+// =============================================================================
+// Note: Advanced logging configurations are commented out to avoid "server busy" conflicts
+// These can be configured manually after deployment if needed
+
+// Configure PostgreSQL server parameters for enhanced logging (OPTIONAL - may cause conflicts)
+/*
+resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'log_min_duration_statement'
   properties: {
@@ -174,51 +181,67 @@ resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/conf
   }
 }
 
-resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'log_statement'
   properties: {
     value: 'ddl'  // Log DDL statements (CREATE, ALTER, DROP)
     source: 'user-override'
   }
+  dependsOn: [
+    logMinDurationStatement
+  ]
 }
 
-resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'log_connections'
   properties: {
     value: 'on'  // Log connection attempts
     source: 'user-override'
   }
+  dependsOn: [
+    logStatement
+  ]
 }
 
-resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'log_disconnections'
   properties: {
     value: 'on'  // Log disconnections
     source: 'user-override'
   }
+  dependsOn: [
+    logConnections
+  ]
 }
 
 // Enable Query Store for performance insights
-resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'pg_qs.query_capture_mode'
   properties: {
     value: 'top'  // Capture top queries for performance analysis
     source: 'user-override'
   }
+  dependsOn: [
+    logDisconnections
+  ]
 }
 
-resource queryStoreMaxQueryTextLength 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2025-06-01-preview' = {
+resource queryStoreMaxQueryTextLength 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
   parent: postgresServer
   name: 'pg_qs.max_query_text_length'
   properties: {
     value: '6000'  // Store up to 6000 characters of query text
     source: 'user-override'
   }
+  dependsOn: [
+    queryStoreCapture
+  ]
 }
+*/
 
 // =============================================================================
 // Outputs

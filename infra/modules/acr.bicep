@@ -1,5 +1,5 @@
 // =============================================================================
-// Azure Container Registry Module
+// Container Registry Module
 // =============================================================================
 // This module creates an Azure Container Registry with security best practices
 // =============================================================================
@@ -31,16 +31,12 @@ param imageTag string = 'latest'
 @description('The path to the Dockerfile relative to the repository root')
 param dockerfilePath string = 'Dockerfile'
 
-@description('The resource ID of the user-assigned managed identity for deployment scripts')
-param managedIdentityId string
-
-@description('The principal ID of the user-assigned managed identity for deployment scripts')
-param managedIdentityPrincipalId string
+// Note: Managed identity parameters removed since deployment script is disabled
 
 // =============================================================================
 // Azure Container Registry
 // =============================================================================
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-05-01-preview' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: containerRegistryName
   location: location
   tags: tags
@@ -80,8 +76,13 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-05-01-pr
 }
 
 // =============================================================================
-// Role Assignment: Grant Managed Identity ACR Push permissions
+// Role Assignment and Deployment Script (DISABLED)
 // =============================================================================
+// Note: These are handled in acr-integration module or built manually
+// Role assignments for app service will be handled in acr-integration module
+// Build script is disabled - use manual build command from outputs
+
+/*
 resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, managedIdentityPrincipalId, 'AcrPush')
   scope: containerRegistry
@@ -92,9 +93,6 @@ resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// =============================================================================
-// Deployment Script to Build and Push Image
-// =============================================================================
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'build-push-image-${uniqueString(containerRegistry.id, location)}'
   location: location
@@ -145,6 +143,21 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       echo "Source: $SOURCE_URL"
       echo "Image: $IMAGE_NAME:$IMAGE_TAG"
       echo "Branch: $SOURCE_BRANCH"
+      
+      # Wait for ACR to be fully available
+      echo "Waiting for ACR to be fully available..."
+      for i in {1..30}; do
+        if az acr show --name $ACR_NAME --query "provisioningState" -o tsv 2>/dev/null | grep -q "Succeeded"; then
+          echo "ACR is available"
+          break
+        fi
+        echo "Waiting for ACR... attempt $i/30"
+        sleep 10
+      done
+
+      # Verify ACR access
+      echo "Verifying ACR access..."
+      az acr show --name $ACR_NAME --query "name" -o tsv
 
       # Build and push using ACR build directly from GitHub
       echo "Building and pushing image using ACR Tasks..."
@@ -184,6 +197,8 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     acrPushRoleAssignment
   ]
 }
+*/
+
 
 // =============================================================================
 // Outputs
@@ -209,5 +224,14 @@ output imageTag string = imageTag
 @description('The full image name with registry URL')
 output fullImageName string = '${containerRegistry.properties.loginServer}/${imageName}:${imageTag}'
 
-@description('The deployment script name')
-output buildScriptName string = buildScript.name
+@description('The source repository URL for manual build')
+output sourceRepositoryUrl string = sourceRepositoryUrl
+
+@description('The source branch for manual build')
+output sourceBranch string = sourceBranch
+
+@description('The dockerfile path for manual build')
+output dockerfilePath string = dockerfilePath
+
+// @description('The deployment script name (commented out)')
+// output buildScriptName string = buildScript.name

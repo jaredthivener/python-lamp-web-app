@@ -163,8 +163,6 @@ module acr 'modules/acr.bicep' = {
     location: location
     containerRegistrySku: containerRegistrySku
     tags: commonTags
-    managedIdentityId: managedIdentity.outputs.managedIdentityId
-    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
     sourceRepositoryUrl: sourceRepositoryUrl
     sourceBranch: sourceBranch
     imageName: imageName
@@ -239,6 +237,9 @@ output imageTag string = acr.outputs.imageTag
 
 @description('The full image name with registry URL including repository')
 output fullImageName string = acr.outputs.fullImageName
+
+@description('Manual build command for the container image')
+output manualBuildCommand string = 'az acr build --registry ${acr.outputs.containerRegistryName} --image ${acr.outputs.imageName}:${acr.outputs.imageTag} --file ${acr.outputs.dockerfilePath} ${acr.outputs.sourceRepositoryUrl}#${acr.outputs.sourceBranch}'
 
 // @description('The deployment script name used for building the image (disabled)')
 // output buildScriptName string = acr.outputs.buildScriptName
