@@ -1,0 +1,35 @@
+version: "3.13"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspaces/python-lamp-web-app:cached
+      - vscode-extensions:/home/vscode/.vscode-server/extensions
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/workspaces/python-lamp-web-app/src
+      - ENVIRONMENT=development
+      - POSTGRES_CONNECTION_STRING=postgresql://postgres:password@postgres:5432/lamp_db
+    depends_on:
+      - postgres
+    command: sleep infinity
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lamp_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres-data:
+  vscode-extensions:
