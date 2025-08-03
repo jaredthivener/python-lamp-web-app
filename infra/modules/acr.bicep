@@ -31,7 +31,11 @@ param imageTag string = 'latest'
 @description('The path to the Dockerfile relative to the repository root')
 param dockerfilePath string = 'Dockerfile'
 
-// Note: Managed identity parameters removed since deployment script is disabled
+@description('The resource ID of the user-assigned managed identity for deployment scripts')
+param managedIdentityId string
+
+@description('The principal ID of the user-assigned managed identity for deployment scripts')
+param managedIdentityPrincipalId string
 
 // =============================================================================
 // Azure Container Registry
@@ -76,13 +80,8 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
 }
 
 // =============================================================================
-// Role Assignment and Deployment Script (DISABLED)
+// Role Assignment: Grant Managed Identity ACR Push permissions
 // =============================================================================
-// Note: These are handled in acr-integration module or built manually
-// Role assignments for app service will be handled in acr-integration module
-// Build script is disabled - use manual build command from outputs
-
-/*
 resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, managedIdentityPrincipalId, 'AcrPush')
   scope: containerRegistry
@@ -93,8 +92,37 @@ resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
+// =============================================================================
+// Role Assignment: Grant Managed Identity Contributor permissions on ACR
+// =============================================================================
+resource acrContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, managedIdentityPrincipalId, 'Contributor')
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor role
+    principalId: managedIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// =============================================================================
+// Role Assignment: Grant Managed Identity Reader permissions on Resource Group
+// =============================================================================
+resource resourceGroupReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, managedIdentityPrincipalId, 'Reader')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7') // Reader role
+    principalId: managedIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// =============================================================================
+// Deployment Script to Build and Push Image
+// =============================================================================
 resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'build-push-image-${uniqueString(containerRegistry.id, location)}'
+  name: 'build-push-${take(uniqueString(containerRegistry.id, location, deployment().name), 8)}'
   location: location
   kind: 'AzureCLI'
   identity: {
@@ -106,12 +134,21 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   properties: {
     azCliVersion: '2.75.0'
     timeout: 'PT45M'
-    retentionInterval: 'PT2H'
-    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnExpiration'
+    forceUpdateTag: uniqueString(containerRegistry.id, deployment().name)
     environmentVariables: [
       {
         name: 'ACR_NAME'
         value: containerRegistry.name
+      }
+      {
+        name: 'RESOURCE_GROUP'
+        value: resourceGroup().name
+      }
+      {
+        name: 'SUBSCRIPTION_ID'
+        value: subscription().subscriptionId
       }
       {
         name: 'SOURCE_URL'
@@ -138,66 +175,111 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       #!/bin/bash
       set -e
 
-      echo "Starting Container Image Build Process"
+      echo "=== Azure Container Registry Build Script ==="
+      echo "Subscription: $SUBSCRIPTION_ID"
+      echo "Resource Group: $RESOURCE_GROUP"
       echo "Registry: $ACR_NAME"
       echo "Source: $SOURCE_URL"
       echo "Image: $IMAGE_NAME:$IMAGE_TAG"
       echo "Branch: $SOURCE_BRANCH"
+      echo "Dockerfile: $DOCKERFILE_PATH"
       
-      # Wait for ACR to be fully available
-      echo "Waiting for ACR to be fully available..."
-      for i in {1..30}; do
-        if az acr show --name $ACR_NAME --query "provisioningState" -o tsv 2>/dev/null | grep -q "Succeeded"; then
-          echo "ACR is available"
-          break
+      # Set the subscription context
+      echo "Setting subscription context..."
+      az account set --subscription "$SUBSCRIPTION_ID"
+      
+      # Verify current context
+      echo "Current context:"
+      az account show --query "{subscriptionId:id, user:user.name}" -o table
+      
+      # Brief wait for role assignments to propagate
+      echo "Waiting for role assignments to propagate..."
+      sleep 30
+      
+      # Since ACR is already created by Bicep, let's directly verify access
+      echo "Verifying ACR exists and is accessible..."
+      if ! az acr show --name "$ACR_NAME" >/dev/null 2>&1; then
+        echo "❌ ERROR: Cannot access ACR."
+        echo "Trying without resource group parameter..."
+        if ! az acr show --name "$ACR_NAME" >/dev/null 2>&1; then
+          echo "❌ ERROR: ACR not found: $ACR_NAME"
+          echo "Available ACRs:"
+          az acr list --query "[].{name:name, resourceGroup:resourceGroup}" -o table || true
+          exit 1
         fi
-        echo "Waiting for ACR... attempt $i/30"
-        sleep 10
-      done
-
-      # Verify ACR access
-      echo "Verifying ACR access..."
-      az acr show --name $ACR_NAME --query "name" -o tsv
+      fi
+      
+      # Get ACR details
+      ACR_STATE=$(az acr show --name "$ACR_NAME" --query "provisioningState" -o tsv)
+      LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query "loginServer" -o tsv)
+      
+      echo "✓ ACR found: $ACR_NAME"
+      echo "✓ Provisioning State: $ACR_STATE"
+      echo "✓ Login Server: $LOGIN_SERVER"
+      
+      # For ACR Tasks, we don't need to login explicitly
+      echo "✓ Ready to proceed with ACR Tasks build"
 
       # Build and push using ACR build directly from GitHub
-      echo "Building and pushing image using ACR Tasks..."
+      echo "Starting container image build using ACR Tasks..."
+      echo "Building image: $IMAGE_NAME:$IMAGE_TAG from $SOURCE_URL#$SOURCE_BRANCH"
       
-      BUILD_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      # Use ACR build to build from the source repository with retry logic
+      # ACR Tasks uses the managed identity automatically for authentication
+      RETRY_COUNT=0
+      MAX_BUILD_RETRIES=3
       
-      az acr build \
-        --registry $ACR_NAME \
-        --image "$IMAGE_NAME:$IMAGE_TAG" \
-        --image "$IMAGE_NAME:$BUILD_TIMESTAMP" \
-        --file $DOCKERFILE_PATH \
-        --platform linux/amd64 \
-        $SOURCE_URL#$SOURCE_BRANCH
-
-      echo "Build completed successfully!"
+      while [ $RETRY_COUNT -lt $MAX_BUILD_RETRIES ]; do
+        echo "Build attempt $((RETRY_COUNT + 1))/$MAX_BUILD_RETRIES"
+        
+        if az acr build \
+          --registry "$ACR_NAME" \
+          --image "$IMAGE_NAME:$IMAGE_TAG" \
+          --file "$DOCKERFILE_PATH" \
+          --platform linux/amd64 \
+          "$SOURCE_URL#$SOURCE_BRANCH"; then
+          echo "✓ Build completed successfully!"
+          break
+        else
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          if [ $RETRY_COUNT -lt $MAX_BUILD_RETRIES ]; then
+            echo "⚠️  Build failed, retrying in 30 seconds... ($RETRY_COUNT/$MAX_BUILD_RETRIES)"
+            sleep 30
+          else
+            echo "❌ Build failed after $MAX_BUILD_RETRIES attempts"
+            exit 1
+          fi
+        fi
+      done
       
       # Verify the image exists
       echo "Verifying image was pushed..."
+      sleep 10  # Brief wait for image to be available
       
-      sleep 30  # Wait for image to be available
-      
-      if az acr repository show --name $ACR_NAME --image "$IMAGE_NAME:$IMAGE_TAG" >/dev/null 2>&1; then
-        echo "Image $IMAGE_NAME:$IMAGE_TAG successfully available in registry"
-        az acr repository show-tags --name $ACR_NAME --repository $IMAGE_NAME --output table
+      if az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$IMAGE_TAG" >/dev/null 2>&1; then
+        echo "✓ Image $IMAGE_NAME:$IMAGE_TAG successfully available in registry"
+        echo "Available tags:"
+        az acr repository show-tags --name "$ACR_NAME" --repository "$IMAGE_NAME" --output table
       else
-        echo "Image verification failed"
+        echo "❌ Image verification failed"
+        echo "Available repositories:"
+        az acr repository list --name "$ACR_NAME" --output table || true
         exit 1
       fi
 
-      echo "Container Image Build Complete!"
-      echo "Registry: $ACR_NAME.azurecr.io"
+      echo "=== Container Image Build Complete! ==="
+      echo "Registry: $LOGIN_SERVER"
       echo "Image: $IMAGE_NAME:$IMAGE_TAG"
-      echo "Build ID: $BUILD_TIMESTAMP"
+      echo "Full Image Name: $LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+      echo "✓ Container image is ready for deployment!"
     '''
   }
   dependsOn: [
     acrPushRoleAssignment
+    acrContributorRoleAssignment
+    resourceGroupReaderRoleAssignment
   ]
 }
-*/
 
 
 // =============================================================================
@@ -233,5 +315,5 @@ output sourceBranch string = sourceBranch
 @description('The dockerfile path for manual build')
 output dockerfilePath string = dockerfilePath
 
-// @description('The deployment script name (commented out)')
-// output buildScriptName string = buildScript.name
+@description('The deployment script name')
+output buildScriptName string = buildScript.name

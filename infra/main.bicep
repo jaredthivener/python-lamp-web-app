@@ -168,6 +168,8 @@ module acr 'modules/acr.bicep' = {
     imageName: imageName
     imageTag: imageTag
     dockerfilePath: dockerfilePath
+    managedIdentityId: managedIdentity.outputs.managedIdentityId
+    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
 
@@ -241,8 +243,8 @@ output fullImageName string = acr.outputs.fullImageName
 @description('Manual build command for the container image')
 output manualBuildCommand string = 'az acr build --registry ${acr.outputs.containerRegistryName} --image ${acr.outputs.imageName}:${acr.outputs.imageTag} --file ${acr.outputs.dockerfilePath} ${acr.outputs.sourceRepositoryUrl}#${acr.outputs.sourceBranch}'
 
-// @description('The deployment script name used for building the image (disabled)')
-// output buildScriptName string = acr.outputs.buildScriptName
+@description('The deployment script name used for building the image')
+output buildScriptName string = acr.outputs.buildScriptName
 
 @description('The resource ID of the App Service')
 output appServiceId string = appService.outputs.appServiceId
