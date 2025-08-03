@@ -753,6 +753,14 @@ class LampApp {
                 duration: 600,
                 easing: 'easeOutQuad',
                 offset: 600
+            })
+            .add({
+                targets: '.stats-container',
+                translateY: [30, 0],
+                opacity: [0, 1],
+                duration: 800,
+                easing: 'easeOutExpo',
+                offset: 800
             });
     }
     
@@ -799,41 +807,69 @@ class LampApp {
     
     // Dashboard methods
     async loadDashboard() {
+        console.log('Loading dashboard data...');
         try {
             const response = await fetch('/api/v1/lamp/dashboard');
             if (response.ok) {
                 const data = await response.json();
+                console.log('Dashboard data received:', data);
                 this.updateDashboard(data);
+            } else {
+                console.error('Dashboard API error:', response.status);
+                // Set default values if API fails
+                this.updateDashboard({
+                    current_state: { is_on: false },
+                    today_stats: { total_toggles: 0, unique_sessions: 0 },
+                    total_lifetime_toggles: 0,
+                    recent_activities: []
+                });
             }
         } catch (error) {
             console.warn('Dashboard update failed:', error);
+            // Set default values if API fails
+            this.updateDashboard({
+                current_state: { is_on: false },
+                today_stats: { total_toggles: 0, unique_sessions: 0 },
+                total_lifetime_toggles: 0,
+                recent_activities: []
+            });
         }
     }
     
     updateDashboard(data) {
+        console.log('Updating dashboard with data:', data);
+        
         // Update current state
         const currentStateEl = document.getElementById('currentState');
         if (currentStateEl) {
             currentStateEl.textContent = data.current_state.is_on ? '🔥 ON' : '🌙 OFF';
             currentStateEl.style.color = data.current_state.is_on ? '#f1c40f' : '#95a5a6';
+        } else {
+            console.error('currentState element not found');
         }
         
         // Update today's toggles
         const todayTogglesEl = document.getElementById('todayToggles');
         if (todayTogglesEl) {
             todayTogglesEl.textContent = data.today_stats ? data.today_stats.total_toggles : '0';
+        } else {
+            console.error('todayToggles element not found');
         }
         
         // Update lifetime toggles
         const lifetimeTogglesEl = document.getElementById('lifetimeToggles');
         if (lifetimeTogglesEl) {
             lifetimeTogglesEl.textContent = data.total_lifetime_toggles.toLocaleString();
+        } else {
+            console.error('lifetimeToggles element not found');
         }
         
         // Update unique sessions
         const uniqueSessionsEl = document.getElementById('uniqueSessions');
         if (uniqueSessionsEl) {
             uniqueSessionsEl.textContent = data.today_stats ? data.today_stats.unique_sessions : '0';
+        } else {
+            console.error('uniqueSessions element not found');
         }
         
         // Update recent activities
