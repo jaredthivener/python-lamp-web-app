@@ -8,19 +8,6 @@ import uvicorn
 import os
 import logging
 
-# Application Insights imports
-from opencensus.ext.azure.log_exporter import AzureLogHandler
-from opencensus.ext.azure.trace_exporter import AzureExporter
-from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
-from opencensus.ext.azure import metrics_exporter
-from opencensus.stats import aggregation as aggregation_module
-from opencensus.stats import measure as measure_module
-from opencensus.stats import stats as stats_module
-from opencensus.stats import view as view_module
-from opencensus.tags import tag_map as tag_map_module
-from opencensus.trace.samplers import ProbabilitySampler
-from opencensus.trace import config_integration
-
 # Import routers
 from api import router as lamp_router
 
@@ -31,21 +18,6 @@ from database.ha_repository import HALampRepository
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Configure Application Insights
-APPLICATIONINSIGHTS_CONNECTION_STRING = os.getenv('APPLICATIONINSIGHTS_CONNECTION_STRING')
-if APPLICATIONINSIGHTS_CONNECTION_STRING:
-    # Configure Azure Log Handler for logging
-    azure_log_handler = AzureLogHandler(connection_string=APPLICATIONINSIGHTS_CONNECTION_STRING)
-    azure_log_handler.setLevel(logging.INFO)
-    logger.addHandler(azure_log_handler)
-
-    # Configure integrations for automatic dependency tracking
-    config_integration.trace_integrations(['requests', 'psycopg2'])
-
-    logger.info("Application Insights configured successfully")
-else:
-    logger.warning("APPLICATIONINSIGHTS_CONNECTION_STRING not found - Application Insights disabled")
 
 # Response models
 class HealthResponse(BaseModel):
@@ -104,16 +76,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
-
-# Configure Application Insights middleware
-if APPLICATIONINSIGHTS_CONNECTION_STRING:
-    # Add Application Insights middleware for request tracking
-    app.add_middleware(
-        FastAPIMiddleware,
-        exporter=AzureExporter(connection_string=APPLICATIONINSIGHTS_CONNECTION_STRING),
-        sampler=ProbabilitySampler(rate=1.0)  # Sample 100% of requests
-    )
-    logger.info("Application Insights middleware added successfully")
 
 # Get the directory of the current file (src)
 current_dir = os.path.dirname(os.path.abspath(__file__))
