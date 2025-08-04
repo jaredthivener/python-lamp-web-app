@@ -13,7 +13,7 @@ param location = 'centralus'
 param resourceGroupName = 'rg-lamp-web-app-dev'
 
 // App Service Configuration
-param appServicePlanSku = 'B1' // Using B1 for better performance with AlwaysOn support
+param appServicePlanSku = 'F1' // Using B1 for better performance than F1
 param appPort = '8000'
 
 // Container Registry Configuration

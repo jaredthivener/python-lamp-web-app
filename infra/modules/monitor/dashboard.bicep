@@ -26,9 +26,6 @@ param appServiceId string
 @description('The name of the App Service')
 param appServiceName string
 
-@description('The resource ID of the App Service Plan')
-param appServicePlanId string
-
 @description('The resource ID of the PostgreSQL Server')
 param postgresServerId string
 
@@ -325,11 +322,11 @@ resource dashboard 'Microsoft.Portal/dashboards@2020-09-01-preview' = {
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: appServicePlanId
+                            id: appServiceId
                           }
                           name: 'CpuPercentage'
                           aggregationType: 4
-                          namespace: 'microsoft.web/serverfarms'
+                          namespace: 'microsoft.web/sites'
                           metricVisualization: {
                             displayName: 'CPU Percentage'
                             color: '#00BCF2'
@@ -372,11 +369,11 @@ resource dashboard 'Microsoft.Portal/dashboards@2020-09-01-preview' = {
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: appServicePlanId
+                            id: appServiceId
                           }
                           name: 'MemoryPercentage'
                           aggregationType: 4
-                          namespace: 'microsoft.web/serverfarms'
+                          namespace: 'microsoft.web/sites'
                           metricVisualization: {
                             displayName: 'Memory Percentage'
                             color: '#0078D4'

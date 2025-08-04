@@ -15,7 +15,7 @@ param location string
 
 @description('The SKU for the App Service Plan')
 @allowed(['F1', 'D1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P1v3', 'P2v3', 'P3v3'])
-param appServicePlanSku string = 'B1'
+param appServicePlanSku string = 'F1'
 
 @description('Tags to apply to the resources')
 param tags object = {}
@@ -129,10 +129,6 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
           value: !empty(keyVaultUri)
             ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ApplicationInsights--ConnectionString/)'
             : applicationInsightsConnectionString
-        }
-        {
-          name: 'AZURE_SUBSCRIPTION_ID'
-          value: subscription().subscriptionId
         }
         {
           name: 'ApplicationInsightsAgent_EXTENSION_VERSION'

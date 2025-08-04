@@ -171,6 +171,7 @@ module acr 'modules/container/acr.bicep' = {
     managedIdentityId: managedIdentity.outputs.managedIdentityId
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
     appServicePrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
+    webhookServiceUri: '' // Will be created separately to avoid circular dependency
   }
 }
 
@@ -213,27 +214,13 @@ module dashboard 'modules/monitor/dashboard.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServiceId: appService.outputs.appServiceId
     appServiceName: appService.outputs.appServiceName
-    appServicePlanId: appService.outputs.appServicePlanId
     postgresServerId: postgresDatabase.outputs.serverId
     postgresServerName: postgresDatabase.outputs.serverName
   }
 }
 
 // =============================================================================
-// Container Registry Webhook Module Deployment (after App Service is created)
-// =============================================================================
-module webhook 'modules/container/webhook.bicep' = {
-  name: 'webhook-deployment'
-  scope: resourceGroup
-  params: {
-    containerRegistryName: containerRegistryName
-    location: location
-    tags: commonTags
-    webhookServiceUri: appService.outputs.webhookUrl
-    imageName: imageName
-  }
-}
-
+// ACR Integration Module (Role Assignment and Webhook)
 // =============================================================================
 // Outputs
 // =============================================================================
@@ -308,9 +295,3 @@ output dashboardName string = dashboard.outputs.dashboardName
 
 @description('The URL to access the monitoring dashboard')
 output dashboardUrl string = dashboard.outputs.dashboardUrl
-
-@description('The name of the ACR webhook')
-output webhookName string = webhook.outputs.webhookName
-
-@description('The webhook URL for continuous deployment')
-output webhookUrl string = appService.outputs.webhookUrl

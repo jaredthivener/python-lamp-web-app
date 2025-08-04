@@ -69,9 +69,6 @@ async def toggle_lamp(request: Request):
 
         message = f"Lamp turned {new_status} successfully!"
 
-        # Log the lamp toggle event for Application Insights
-        logger.info(f"💡 Lamp toggled: {previous_status} → {new_status} by session {session_id[:8]}... from {ip_address}")
-
         return LampActionResponse(
             status=new_status,
             is_on=new_state.is_on,
