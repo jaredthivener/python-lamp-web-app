@@ -287,10 +287,10 @@ Our Docker setup includes modern best practices:
 
 ```dockerfile
 # Multi-stage build for optimal size
-FROM python:3.13-slim as builder
+FROM python:3.13.5-slim as builder
 # ... build dependencies
 
-FROM python:3.13-slim as runtime  
+FROM python:3.13.5-slim as runtime  
 # ... minimal runtime image
 ```
 
