@@ -53,7 +53,9 @@ jobs:
 
       - name: Initialize azd environment
         run: |
-          azd auth login --use-device-code=false
+          # azd should automatically use the Azure CLI credentials from the login step
+          # No need to run azd auth login since azure/login@v2 already authenticated
+          echo "Setting up azd environment..."
           azd env new ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location centralus || azd env select ${{ env.AZURE_ENV_NAME }}
 
       - name: Deploy infrastructure
