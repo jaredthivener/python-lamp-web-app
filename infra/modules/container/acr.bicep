@@ -176,7 +176,7 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     }
   }
   properties: {
-    azCliVersion: '2.75.0'
+    azCliVersion: '2.76.0'
     timeout: 'PT15M'
     retentionInterval: 'PT1H'
     environmentVariables: [
