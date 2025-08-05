@@ -109,7 +109,7 @@ git clone <repository-url>
 cd python-lamp-web-app
 
 # Make scripts executable
-chmod +x start.sh deploy-to-azure.sh
+chmod +x start.sh
 ```
 
 ### 2️⃣ **Local Development**
@@ -121,7 +121,7 @@ chmod +x start.sh deploy-to-azure.sh
 python3 -m venv venv
 source venv/bin/activate
 pip install -r src/requirements.txt
-python src/main.py
+python3 src/main.py
 ```
 
 ### 3️⃣ **Deploy to Azure**
@@ -130,7 +130,7 @@ python src/main.py
 az login
 
 # Deploy infrastructure + application (recommended)
-./deploy-to-azure.sh
+azd up
 ```
 
 **🎉 That's it! Your app will be live in minutes with full monitoring and continuous deployment!**
