@@ -12,7 +12,7 @@
 </head>
 <body>
     <div class="background-gradient"></div>
-    
+
     <div class="container">
         <header class="app-header">
             <h1 class="app-title">Pull the string to illuminate your space</h1>
@@ -21,10 +21,10 @@
         <div class="lamp-container">
             <!-- Ceiling mount -->
             <div class="ceiling-mount"></div>
-            
+
             <!-- Hanging cord from ceiling -->
             <div class="hanging-cord"></div>
-            
+
             <!-- Main lamp fixture -->
             <div id="lamp" class="hanging-lamp off" aria-label="Toggle lamp" role="button" tabindex="0">
                 <!-- Lamp shade -->
@@ -33,38 +33,38 @@
                     <div class="shade-body"></div>
                     <div class="shade-bottom"></div>
                 </div>
-                
+
                 <!-- Light bulb inside shade -->
                 <div class="light-bulb">
                     <div class="bulb-base"></div>
                     <div class="bulb-glass"></div>
                     <div class="bulb-filament"></div>
                 </div>
-                
+
                 <!-- Light glow effect -->
                 <div class="light-glow"></div>
-                
+
                 <!-- Pull string - Single SVG curved string like spaghetti -->
                 <div class="pull-string-container">
                     <svg class="string-svg" width="120" height="120" viewBox="0 0 120 120">
-                        <path id="stringPath" class="string-path" 
-                              d="M 60 0 Q 60 20 60 40 Q 60 60 60 80" 
-                              stroke="#bdc3c7" 
-                              stroke-width="3" 
-                              fill="none" 
+                        <path id="stringPath" class="string-path"
+                              d="M 60 0 Q 60 20 60 40 Q 60 60 60 80"
+                              stroke="#bdc3c7"
+                              stroke-width="3"
+                              fill="none"
                               stroke-linecap="round"/>
                         <!-- String highlight for 3D effect -->
-                        <path id="stringHighlight" class="string-highlight" 
-                              d="M 60 0 Q 60 20 60 40 Q 60 60 60 80" 
-                              stroke="rgba(255,255,255,0.3)" 
-                              stroke-width="1" 
-                              fill="none" 
+                        <path id="stringHighlight" class="string-highlight"
+                              d="M 60 0 Q 60 20 60 40 Q 60 60 60 80"
+                              stroke="rgba(255,255,255,0.3)"
+                              stroke-width="1"
+                              fill="none"
                               stroke-linecap="round"/>
                         <!-- Orange handle at the end of the string -->
                         <ellipse id="stringHandle" class="string-handle-svg"
                                  cx="60" cy="80" rx="9" ry="12"
-                                 fill="url(#handleGradient)" 
-                                 stroke="rgba(0,0,0,0.2)" 
+                                 fill="url(#handleGradient)"
+                                 stroke="rgba(0,0,0,0.2)"
                                  stroke-width="0.5"/>
                         <!-- Gradient definition for handle -->
                         <defs>
