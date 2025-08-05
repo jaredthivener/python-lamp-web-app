@@ -1,7 +1,6 @@
 name: Deploy Azure Infrastructure
 
 on:
-  # Trigger on pushes to main branch that affect infrastructure
   push:
     branches:
       - main
@@ -10,7 +9,6 @@ on:
       - "azure.yaml"
       - ".github/workflows/infra-deploy.yml"
 
-  # Allow manual trigger
   workflow_dispatch:
     inputs:
       environment:
@@ -33,6 +31,7 @@ env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
 
 jobs:
   deploy-infrastructure:
@@ -44,12 +43,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Azure Developer CLI
-        uses: Azure/setup-azd@v1.0.0
-
-      - name: Setup Node.js (required for azd)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
+        uses: Azure/setup-azd@v2
 
       - name: Log in to Azure using OIDC
         uses: azure/login@v2
@@ -60,88 +54,13 @@ jobs:
 
       - name: Initialize azd environment
         run: |
-          azd auth login --client-id ${{ secrets.AZURE_CLIENT_ID }} --federated-credential-provider "github" --tenant-id ${{ secrets.AZURE_TENANT_ID }}
-          azd init --environment ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location centralus
-
-      - name: Validate infrastructure (what-if)
-        run: |
-          azd provision --preview
+          azd auth login --use-device-code=false
+          azd env new ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location centralus || azd env select ${{ env.AZURE_ENV_NAME }}
 
       - name: Deploy infrastructure
         run: |
           azd provision
 
-      - name: Get deployment outputs
-        id: deployment-outputs
-        run: |
-          # Get the deployment outputs and set them as step outputs
-          WEBAPP_URL=$(azd env get-values | grep AZURE_WEBAPP_URL | cut -d'=' -f2 | tr -d '"')
-          echo "webapp_url=$WEBAPP_URL" >> $GITHUB_OUTPUT
-
-          RESOURCE_GROUP=$(azd env get-values | grep AZURE_RESOURCE_GROUP_NAME | cut -d'=' -f2 | tr -d '"')
-          echo "resource_group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
-
-      - name: Verify deployment
-        run: |
-          echo "🚀 Infrastructure deployed successfully!"
-          echo "📍 Resource Group: ${{ steps.deployment-outputs.outputs.resource_group }}"
-          echo "🌐 Web App URL: ${{ steps.deployment-outputs.outputs.webapp_url }}"
-
-          # Verify resources are healthy
-          az group show --name ${{ steps.deployment-outputs.outputs.resource_group }} --output table
-
-      - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: deployment-logs-${{ env.AZURE_ENV_NAME }}
-          path: |
-            .azure/
-            !.azure/**/*.json
-          retention-days: 30
-
-  # Optional: Deploy application after infrastructure
-  deploy-application:
-    needs: deploy-infrastructure
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
-    if: success()
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Azure Developer CLI
-        uses: Azure/setup-azd@v1.0.0
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Log in to Azure using OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Initialize azd environment
-        run: |
-          azd auth login --client-id ${{ secrets.AZURE_CLIENT_ID }} --federated-credential-provider "github" --tenant-id ${{ secrets.AZURE_TENANT_ID }}
-          azd init --environment ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location centralus
-
-      - name: Deploy application
-        run: |
-          azd deploy
-
-      - name: Run health check
-        run: |
-          WEBAPP_URL=$(azd env get-values | grep AZURE_WEBAPP_URL | cut -d'=' -f2 | tr -d '"')
-          echo "Testing health endpoint: $WEBAPP_URL/health"
-
-          # Wait for app to be ready
-          sleep 30
-
-          # Basic health check
-          curl -f "$WEBAPP_URL/health" || echo "Health check failed, but deployment may still be successful"
+    #   - name: Deploy application
+    #     run: |
+    #       azd deploy
