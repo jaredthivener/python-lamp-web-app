@@ -36,7 +36,6 @@ env:
 jobs:
   deploy-infrastructure:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout code
