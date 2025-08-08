@@ -12,20 +12,19 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for faster Python package management
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
 
-# Make uv available for the vscode user as well
-RUN ln -s /root/.cargo/bin/uv /usr/local/bin/uv
+# Install uv for faster Python package management and ensure it's available for all users
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -sf /root/.local/bin/uv /usr/local/bin/uv
+ENV PATH="/root/.local/bin:$PATH"
 
 # Copy project files and install dependencies using uv
 COPY pyproject.toml /tmp/pyproject.toml
-COPY requirements.txt /tmp/requirements.txt
+COPY src/requirements.txt /tmp/requirements.txt
 WORKDIR /tmp
 
 # Install project dependencies and dev dependencies using uv
-RUN uv pip install --system -r requirements.txt && \
+RUN uv pip install --system -r /tmp/requirements.txt && \
     uv pip install --system \
     pytest \
     pytest-asyncio \
