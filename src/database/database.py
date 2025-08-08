@@ -48,7 +48,7 @@ class DatabaseConfig:
                         client = SecretClient(vault_url=vault_url, credential=credential)
                         secret = client.get_secret(secret_name)
                         self._connection_string = secret.value
-                        logger.info(f"Successfully retrieved PostgreSQL connection string from Key Vault using managed identity (vault: {vault_name}, secret: {secret_name})")
+                        logger.info("Successfully retrieved PostgreSQL connection string from Key Vault using managed identity")
                         return self._connection_string
                     else:
                         logger.error(f"Could not parse Key Vault reference: {connection_string}")
