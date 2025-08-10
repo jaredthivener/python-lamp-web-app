@@ -1,854 +1,847 @@
-// Lamp Interactive App - Enhanced Hanging Lamp Version
+// /static/script.js
+// Enhanced LampApp
+// - Cached DOM lookups
+// - Abortable fetches
+// - rAF-driven physics & recoil
+// - DocumentFragment for activity rendering
+// - Defensive checks around anime.js
+// - Robust cleanup
+
 class LampApp {
-    constructor() {
-        // DOM elements
-        this.lamp = document.getElementById('lamp');
-        this.stringHandle = document.getElementById('stringHandle');
-        this.stringPath = document.getElementById('stringPath');
-        this.stringHighlight = document.getElementById('stringHighlight');
-        this.stringSvg = document.querySelector('.string-svg');
-        this.html = document.documentElement;
-        this.particlesContainer = document.getElementById('particles');
-
-        // State
-        this.isOn = false;
-        this.isAnimating = false;
-        this.isDragging = false;
-        this.isRecoiling = false;
-        this.particles = [];
-        this.eventCleanup = [];
-
-        // Physics
-        this.physics = { pullThreshold: 50, maxPull: 150, maxSway: 80, springForce: 0.12, damping: 0.88 };
-        this.dragStart = { x: 0, y: 0 };
-        this.current = { pull: 0, sway: 0 };
-        this.velocity = { x: 0, y: 0 };
-
-        // String points
-        this.stringPoints = [
-            { x: 60, y: 0, vx: 0, vy: 0 }, { x: 60, y: 20, vx: 0, vy: 0 }, { x: 60, y: 40, vx: 0, vy: 0 },
-            { x: 60, y: 60, vx: 0, vy: 0 }, { x: 60, y: 80, vx: 0, vy: 0 }
-        ];
-
-        this.init();
-    }
-
-    init() {
-        console.log('🚀 LampApp initializing...');
-        this.bindEvents();
-        this.createParticles();
-        this.updateStringCurve();
-        this.updateHandlePosition();
-        this.isOn = this.lamp.classList.contains('on');
-        console.log('Initial lamp state:', this.isOn);
-
-        this.startUpdateLoop();
-        this.animateEntrance();
-
-        // Force dashboard load after a short delay to ensure DOM is ready
-        setTimeout(() => {
-            console.log('🔧 Force loading dashboard after delay...');
-            this.loadDashboard();
-
-            // Direct test of DOM elements
-            console.log('🧪 Testing direct DOM manipulation...');
-            const testEl = document.getElementById('todayToggles');
-            if (testEl) {
-                testEl.textContent = 'TEST';
-                console.log('✅ Direct DOM test successful');
-            } else {
-                console.error('❌ Direct DOM test failed - element not found');
-            }
-        }, 1000);
-
-        console.log('✅ LampApp initialization complete');
-    }
-
-    startUpdateLoop() {
-        console.log('🔄 Setting up update loop...');
-
-        // Load dashboard immediately
-        this.loadDashboard();
-
-        // Set up periodic updates
-        this.updateInterval = setInterval(() => {
-            console.log('⏰ Periodic update starting...');
-            this.syncWithBackend();
-            this.loadDashboard();
-            if (this.particles.length < 30) this.createParticle();
-        }, 5000);  // More frequent updates for better responsiveness
-
-        requestAnimationFrame(() => this.updateHandlePosition());
-    }
-
-    bindEvents() {
-        if (this.lamp) {
-            const click = (e) => !e.target.closest('.pull-string-container') && (e.preventDefault(), this.toggleLampState());
-            const keydown = (e) => (['Enter', ' '].includes(e.key)) && (e.preventDefault(), this.toggleLampState());
-            this.lamp.addEventListener('click', click);
-            this.lamp.addEventListener('keydown', keydown);
-            this.eventCleanup.push(() => this.lamp.removeEventListener('click', click), () => this.lamp.removeEventListener('keydown', keydown));
-        }
-
-        this.bindStringDragEvents();
-
-        const globalKey = (e) => ['l', 'L'].includes(e.key) && this.toggleLampState();
-        const saveState = () => localStorage.setItem('lampState', JSON.stringify({ isOn: this.isOn }));
-
-        document.addEventListener('keydown', globalKey);
-        window.addEventListener('beforeunload', saveState);
-        this.eventCleanup.push(() => document.removeEventListener('keydown', globalKey), () => window.removeEventListener('beforeunload', saveState));
-
-        this.loadState();
-    }
-
-    bindStringDragEvents() {
-        const elements = [this.stringSvg, this.stringHandle].filter(Boolean);
-        const handlers = {
-            mousedown: (e) => this.startDrag(e),
-            touchstart: (e) => this.startDrag(e),
-            contextmenu: (e) => e.preventDefault()
-        };
-
-        elements.forEach(el => {
-            Object.entries(handlers).forEach(([event, handler]) => {
-                el.addEventListener(event, handler, event === 'touchstart' ? { passive: false } : undefined);
-                this.eventCleanup.push(() => el.removeEventListener(event, handler));
-            });
-        });
-
-        const globalHandlers = {
-            mousemove: (e) => this.onDrag(e),
-            mouseup: (e) => this.endDrag(e),
-            touchmove: (e) => this.onDrag(e),
-            touchend: (e) => this.endDrag(e)
-        };
-
-        Object.entries(globalHandlers).forEach(([event, handler]) => {
-            document.addEventListener(event, handler, event.includes('touch') ? { passive: false } : undefined);
-            this.eventCleanup.push(() => document.removeEventListener(event, handler));
-        });
-    }
-
-    startDrag(e) {
-        e.preventDefault();
-        this.isDragging = true;
-        this.isRecoiling = false;
-        const touch = e.touches?.[0] || e;
-        this.dragStart = { x: touch.clientX, y: touch.clientY };
-        this.velocity = { x: 0, y: 0 };
-        Object.assign(this.stringSvg.style, { cursor: 'grabbing' });
-        Object.assign(document.body.style, { userSelect: 'none', cursor: 'grabbing' });
-        this.stringHandle.classList.add('dragging');
-    }
-
-    onDrag(e) {
-        if (!this.isDragging) return;
-        e.preventDefault();
-
-        const touch = e.touches?.[0] || e;
-        const delta = { x: touch.clientX - this.dragStart.x, y: touch.clientY - this.dragStart.y };
-
-        this.current.pull = Math.max(0, Math.min(delta.y, this.physics.maxPull));
-        this.current.sway = Math.max(-this.physics.maxSway, Math.min(delta.x * 0.8, this.physics.maxSway));
-        this.velocity = { x: delta.x * 0.08, y: delta.y * 0.08 };
-
-        this.updateStringCurve();
-        this.updateHandlePosition();
-
-        if (this.current.pull > this.physics.pullThreshold * 0.6) {
-            const intensity = this.current.pull / this.physics.maxPull;
-            const scale = 1 + intensity * 0.15;
-            const lastPoint = this.stringPoints[this.stringPoints.length - 1];
-            this.stringHandle.setAttribute('transform', `rotate(${this.current.sway * 0.1} ${lastPoint.x} ${lastPoint.y}) scale(${scale})`);
-        }
-    }
-
-    updateStringCurve() {
-        this.stringPoints = Array.from({length: 5}, (_, i) => ({ x: 60, y: i * 20, vx: 0, vy: 0 }));
-
-        const forceStrength = this.current.pull / this.physics.maxPull;
-        let pathData = `M 60 0`;
-
-        for (let i = 1; i < 5; i++) {
-            const influence = Math.pow(i / 4, 1.5);
-            const point = this.stringPoints[i];
-
-            point.y += this.current.pull * influence * 0.4;
-            const swayOffset = this.current.sway * influence * 0.6;
-            point.x += swayOffset + Math.sin(i * 0.8) * swayOffset * 0.3;
-
-            if (i > 1) point.y += forceStrength * 15 * Math.sin(i * 0.5);
-            if (i < 4) pathData += ` Q ${point.x} ${point.y} ${this.stringPoints[i + 1].x} ${this.stringPoints[i + 1].y}`;
-        }
-
-        this.stringPath.setAttribute('d', pathData);
-        this.stringHighlight.setAttribute('d', pathData);
-    }
-
-    updateHandlePosition() {
-        const lastPoint = this.stringPoints[4];
-        Object.assign(this.stringHandle, {
-            cx: lastPoint.x,
-            cy: lastPoint.y,
-            transform: `rotate(${this.current.sway * 0.1} ${lastPoint.x} ${lastPoint.y}) scale(${1 + (this.current.pull / this.physics.maxPull) * 0.1})`
-        });
-    }
-
-    endDrag(e) {
-        if (!this.isDragging) return;
-        this.isDragging = false;
-        Object.assign(document.body.style, { userSelect: '', cursor: '' });
-        this.stringSvg.style.cursor = 'grab';
-        this.stringHandle.classList.remove('dragging');
-
-        this.current.pull >= this.physics.pullThreshold ? this.triggerPullAnimation() : this.startSpaghettiRecoil();
-    }
-
-    startSpaghettiRecoil() {
-        this.isRecoiling = true;
-        this.animateSpaghettiRecoil();
-    }
-
-    animateSpaghettiRecoil() {
-        if (!this.isRecoiling) return;
-
-        for (let i = 1; i < 5; i++) {
-            const point = this.stringPoints[i];
-            const [forceX, forceY] = [(60 - point.x) * this.physics.springForce, (i * 20 - point.y) * this.physics.springForce];
-
-            point.vx = (point.vx + forceX) * this.physics.damping;
-            point.vy = (point.vy + forceY) * this.physics.damping;
-            point.x += point.vx;
-            point.y += point.vy;
-        }
-
-        this.velocity.y = (this.velocity.y - this.current.pull * this.physics.springForce * 0.5) * this.physics.damping;
-        this.velocity.x = (this.velocity.x - this.current.sway * this.physics.springForce * 0.5) * this.physics.damping;
-
-        this.current.pull = Math.max(-30, Math.min(this.physics.maxPull, this.current.pull + this.velocity.y));
-        this.current.sway = Math.max(-this.physics.maxSway, Math.min(this.physics.maxSway, this.current.sway + this.velocity.x));
-
-        this.updateStringCurve();
-        this.updateHandlePosition();
-
-        (Math.abs(this.velocity.y) + Math.abs(this.velocity.x) + Math.abs(this.current.pull) + Math.abs(this.current.sway) > 2)
-            ? requestAnimationFrame(() => this.animateSpaghettiRecoil())
-            : this.finishSpaghettiRecoil();
-    }
-
-    finishSpaghettiRecoil() {
-        this.isRecoiling = false;
-        this.velocity = { x: 0, y: 0 };
-
-        typeof anime !== 'undefined' ? anime({
-            targets: { pull: this.current.pull, sway: this.current.sway },
-            pull: 0, sway: 0, duration: 500, easing: 'easeOutElastic(1, 0.8)',
-            update: anim => {
-                this.current.pull = anim.animations[0].currentValue;
-                this.current.sway = anim.animations[1].currentValue;
-                this.updateStringCurve();
-                this.updateHandlePosition();
-            },
-            complete: () => this.resetStringPosition()
-        }) : this.resetStringPosition();
-    }
-
-    triggerPullAnimation() {
-        this.isRecoiling = false;
-
-        if (typeof anime !== 'undefined') {
-            anime({
-                targets: { pull: this.current.pull, sway: this.current.sway },
-                pull: this.current.pull + 25, sway: this.current.sway * 1.3,
-                duration: 120, easing: 'easeOutQuad',
-                update: anim => {
-                    this.current.pull = anim.animations[0].currentValue;
-                    this.current.sway = anim.animations[1].currentValue;
-                    this.updateStringCurve();
-                    this.updateHandlePosition();
-                },
-                complete: () => anime({
-                    targets: { pull: this.current.pull + 25, sway: this.current.sway * 1.3 },
-                    pull: [this.current.pull + 25, -20, 15, -8, 3, 0],
-                    sway: [this.current.sway * 1.3, this.current.sway * -0.4, this.current.sway * 0.2, this.current.sway * -0.1, 0],
-                    duration: 1000, easing: 'easeOutElastic(1, 0.6)',
-                    update: anim => {
-                        this.current.pull = anim.animations[0].currentValue;
-                        this.current.sway = anim.animations[1].currentValue;
-                        this.updateStringCurve();
-                        this.updateHandlePosition();
-                    },
-                    complete: () => this.resetStringPosition()
-                })
-            });
-        } else {
-            setTimeout(() => this.resetStringPosition(), 800);
-        }
-
-        setTimeout(() => this.toggleLampState(), 80);
-    }
-
-    resetStringPosition() {
-        const originalPath = 'M 60 0 Q 60 20 60 40 Q 60 60 60 80';
-        this.stringPath.setAttribute('d', originalPath);
-        this.stringHighlight.setAttribute('d', originalPath);
-
-        Object.assign(this.stringHandle, { cx: '60', cy: '80' });
-        this.stringHandle.removeAttribute('transform');
-
-        Object.assign(this, {
-            current: { pull: 0, sway: 0 },
-            velocity: { x: 0, y: 0 },
-            isRecoiling: false,
-            stringPoints: Array.from({length: 5}, (_, i) => ({ x: 60, y: i * 20, vx: 0, vy: 0 }))
-        });
-    }
-
-    toggleLampState() {
-        if (this.isAnimating) return;
-
-        console.log('🎯 Lamp clicked! Toggling state...');
-        this.isAnimating = true;
-        this.isOn = !this.isOn;
-        this.updateLampVisuals();
-        this.callToggleAPI();
-    }
-
-    async callToggleAPI() {
-        try {
-            const response = await fetch('/api/v1/lamp/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-            if (response.ok) {
-                const data = await response.json();
-                if (data.is_on !== this.isOn) {
-                    this.isOn = data.is_on;
-                    this.updateLampVisuals();
-                }
-
-                // Immediately update dashboard after successful toggle
-                console.log('🔄 Refreshing dashboard after toggle...');
-                setTimeout(() => this.loadDashboard(), 100);
-            }
-        } catch (error) {
-            console.warn('API call failed:', error);
-        } finally {
-            setTimeout(() => this.isAnimating = false, 800);
-        }
-    }
-
-    updateLampVisuals() {
-        this.lamp.classList.remove('on', 'off');
-        this.lamp.classList.add(this.isOn ? 'on' : 'off');
-        this.lamp.offsetHeight;
-
-        // Add a small delay to let CSS animations start, then enhance with JS animations
-        setTimeout(() => {
-            this.animateLampSwing();
-        }, 50);
-
-        // Update theme
-        this.updateTheme();
-
-        // Trigger particle effects
-        if (this.isOn) {
-            this.triggerLightParticles();
-        }
-
-        // Update page title
-        document.title = `Lamp App - ${this.isOn ? 'ON' : 'OFF'}`;
-    }
-
-    // This method is now replaced by the enhanced async version below
-
-    animateLampSwing() {
-        anime({
-            targets: this.lamp,
-            rotate: [
-                { value: -3, duration: 200, easing: 'easeOutQuad' },
-                { value: 2, duration: 200, easing: 'easeInOutQuad' },
-                { value: -1, duration: 200, easing: 'easeInOutQuad' },
-                { value: 0, duration: 300, easing: 'easeOutElastic(1, 0.3)' }
-            ]
-        });
-
-        if (this.isOn) {
-            anime({ targets: '.light-glow', scale: [0.8, 1.1, 1], duration: 600, easing: 'easeOutElastic(1, 0.4)' });
-            anime({ targets: '.bulb-glass', scale: [1, 1.08, 1], duration: 500, easing: 'easeOutElastic(1, 0.3)' });
-            anime({ targets: '.shade-body', scale: [1, 1.02, 1], duration: 400, easing: 'easeOutQuad' });
-        } else {
-            anime({ targets: '.light-glow', scale: 1, duration: 300, easing: 'easeOutQuad' });
-            anime({ targets: '.bulb-glass', scale: [1, 0.98, 1], duration: 300, easing: 'easeOutQuad' });
-            anime({ targets: '.shade-body', scale: 1, duration: 300, easing: 'easeOutQuad' });
-        }
-    }
-
-    createClickFeedback() {
-        // Visual feedback when sound is not available
-        const feedback = document.createElement('div');
-        feedback.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 60px;
-            height: 60px;
-            border: 3px solid var(--accent);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 1000;
-        `;
-
-        document.body.appendChild(feedback);
-
-        anime({
-            targets: feedback,
-            scale: [0, 1.5],
-            opacity: [1, 0],
-            duration: 600,
-            easing: 'easeOutQuad',
-            complete: () => feedback.remove()
-        });
-    }
-
-    updateTheme() {
-        const newTheme = this.isOn ? 'light' : 'dark';
-        this.html.setAttribute('data-theme', newTheme);
-
-        // Animate background transition
-        anime({
-            targets: '.background-gradient',
-            opacity: [1, 0.8, 1],
-            duration: 400,
-            easing: 'easeInOutQuad'
-        });
-    }
-
-    createParticles() {
-        const particleCount = window.innerWidth < 768 ? 15 : 25;
-
-        for (let i = 0; i < particleCount; i++) {
-            this.createParticle();
-        }
-    }
-
-    createParticle() {
-        const particle = document.createElement('div');
-        particle.className = 'particle';
-
-        const size = Math.random() * 4 + 2;
-        const x = Math.random() * window.innerWidth;
-        const y = Math.random() * window.innerHeight;
-        const delay = Math.random() * 3;
-
-        particle.style.cssText = `
-            left: ${x}px;
-            top: ${y}px;
-            width: ${size}px;
-            height: ${size}px;
-            animation-delay: ${delay}s;
-        `;
-
-        this.particlesContainer.appendChild(particle);
-        this.particles.push(particle);
-
-        // Remove particle after animation
-        setTimeout(() => {
-            if (particle.parentNode) {
-                particle.remove();
-                const index = this.particles.indexOf(particle);
-                if (index > -1) this.particles.splice(index, 1);
-            }
-        }, 3000 + delay * 1000);
-    }
-
-    triggerLightParticles() {
-        // Create light rays emanating from inside the lamp shade
-        const lampRect = this.lamp.getBoundingClientRect();
-        const lampCenterX = lampRect.left + lampRect.width / 2;
-        const lampCenterY = lampRect.top + 80; // Position inside the shade
-
-        // Create warm light particles
-        for (let i = 0; i < 12; i++) {
-            setTimeout(() => {
-                const particle = document.createElement('div');
-                particle.style.cssText = `
-                    position: fixed;
-                    left: ${lampCenterX}px;
-                    top: ${lampCenterY}px;
-                    width: 8px;
-                    height: 8px;
-                    background: radial-gradient(circle, #fff8dc, #ffd700);
-                    border-radius: 50%;
-                    pointer-events: none;
-                    z-index: 100;
-                    box-shadow: 0 0 10px #ffd700;
-                `;
-
-                document.body.appendChild(particle);
-
-                const angle = (i / 12) * Math.PI * 2;
-                const distance = 100 + Math.random() * 50;
-                const endX = Math.cos(angle) * distance;
-                const endY = Math.sin(angle) * distance + 30; // Bias downward for lamp light
-
-                anime({
-                    targets: particle,
-                    translateX: endX,
-                    translateY: endY,
-                    scale: [0, 1.5, 0],
-                    opacity: [0, 1, 0],
-                    duration: 1200,
-                    easing: 'easeOutQuad',
-                    complete: () => particle.remove()
-                });
-            }, i * 80);
-        }
-
-        // Create additional ambient glow particles
-        for (let i = 0; i < 6; i++) {
-            setTimeout(() => {
-                const glowParticle = document.createElement('div');
-                glowParticle.style.cssText = `
-                    position: fixed;
-                    left: ${lampCenterX}px;
-                    top: ${lampCenterY + 40}px;
-                    width: 20px;
-                    height: 20px;
-                    background: radial-gradient(circle, rgba(255, 248, 220, 0.6), transparent);
-                    border-radius: 50%;
-                    pointer-events: none;
-                    z-index: 99;
-                    filter: blur(8px);
-                `;
-
-                document.body.appendChild(glowParticle);
-
-                const randomX = (Math.random() - 0.5) * 200;
-                const randomY = Math.random() * 100 + 50;
-
-                anime({
-                    targets: glowParticle,
-                    translateX: randomX,
-                    translateY: randomY,
-                    scale: [0, 2, 0],
-                    opacity: [0, 0.8, 0],
-                    duration: 2000,
-                    easing: 'easeOutCubic',
-                    complete: () => glowParticle.remove()
-                });
-            }, i * 150);
-        }
-    }
-
-    animateEntrance() {
-        // Stagger animations for entrance
-        anime.timeline()
-            .add({
-                targets: '.app-header',
-                translateY: [-50, 0],
-                opacity: [0, 1],
-                duration: 800,
-                easing: 'easeOutExpo'
-            })
-            .add({
-                targets: '.lamp-container',
-                scale: [0.5, 1],
-                opacity: [0, 1],
-                duration: 1000,
-                easing: 'easeOutElastic(1, 0.5)',
-                offset: 200
-            })
-            .add({
-                targets: '.controls, .status-indicator',
-                translateY: [30, 0],
-                opacity: [0, 1],
-                duration: 600,
-                easing: 'easeOutQuad',
-                offset: 600
-            })
-            .add({
-                targets: '.stats-container',
-                translateY: [30, 0],
-                opacity: [0, 1],
-                duration: 800,
-                easing: 'easeOutExpo',
-                offset: 800
-            });
-    }
-
-    loadState() {
-        try {
-            const saved = localStorage.getItem('lampState');
-            if (saved) {
-                // Parse the saved state but don't restore it since we always start in dark mode
-                // const state = JSON.parse(saved);
-
-                // Optionally restore lamp state (commented out to always start in dark mode)
-                // if (state.isOn) {
-                //     this.toggleLamp();
-                // }
-            }
-        } catch (error) {
-            console.log('Could not load saved state:', error);
-        }
-    }
-
-    async syncWithBackend() {
-        // Don't sync if user is currently interacting with the lamp
-        if (this.isAnimating) {
-            return;
-        }
-
-        // Add visual indicator
-        document.title = 'Loading... - Lamp App';
-
-        try {
-            const response = await fetch('/api/v1/lamp/status');
-            if (response.ok) {
-                const data = await response.json();
-
-                // Only update if the state actually differs to avoid unnecessary updates
-                if (data.is_on !== this.isOn) {
-                    console.log(`Syncing backend state: ${data.is_on} (was: ${this.isOn})`);
-                    this.isOn = data.is_on;
-                    this.updateLampVisuals();
-                }
-
-                // Update page title to show sync status
-                document.title = `Lamp App - ${data.status.toUpperCase()}`;
-            } else {
-                document.title = 'Lamp App - API Error';
-            }
-        } catch (error) {
-            document.title = 'Lamp App - No Connection';
-        }
-    }
-
-    // Manual test function for debugging
-    async testDashboard() {
-        console.log('🧪 Manual dashboard test...');
-        console.log('Elements:', {
-            currentState: document.getElementById('currentState'),
-            todayToggles: document.getElementById('todayToggles'),
-            lifetimeToggles: document.getElementById('lifetimeToggles'),
-            uniqueSessions: document.getElementById('uniqueSessions')
-        });
-
-        try {
-            const response = await fetch('/api/v1/lamp/dashboard');
-            const data = await response.json();
-            console.log('Test API data:', data);
-            this.updateDashboard(data);
-        } catch (error) {
-            console.error('Test failed:', error);
-        }
-    }
-
-    // Dashboard methods
-    async loadDashboard() {
-        console.log('Loading dashboard data...');
-
-        // Debug: Check if elements exist before API call
-        console.log('DOM elements check:', {
-            currentState: !!document.getElementById('currentState'),
-            todayToggles: !!document.getElementById('todayToggles'),
-            lifetimeToggles: !!document.getElementById('lifetimeToggles'),
-            uniqueSessions: !!document.getElementById('uniqueSessions'),
-            activityList: !!document.getElementById('activityList')
-        });
-
-        try {
-            const response = await fetch('/api/v1/lamp/dashboard');
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Dashboard data received:', data);
-                this.updateDashboard(data);
-            } else {
-                console.error('Dashboard API error:', response.status);
-                // Set default values if API fails
-                this.updateDashboard({
-                    current_state: { is_on: false },
-                    today_stats: { total_toggles: 0, unique_sessions: 0 },
-                    total_lifetime_toggles: 0,
-                    recent_activities: []
-                });
-            }
-        } catch (error) {
-            console.warn('Dashboard update failed:', error);
-            // Set default values if API fails
-            this.updateDashboard({
-                current_state: { is_on: false },
-                today_stats: { total_toggles: 0, unique_sessions: 0 },
-                total_lifetime_toggles: 0,
-                recent_activities: []
-            });
-        }
-    }
-
-    updateDashboard(data) {
-        console.log('Updating dashboard with data:', data);
-
-        // Update current state
-        const currentStateEl = document.getElementById('currentState');
-        if (currentStateEl) {
-            currentStateEl.textContent = data.current_state.is_on ? '🔥 ON' : '🌙 OFF';
-            currentStateEl.style.color = data.current_state.is_on ? '#f1c40f' : '#95a5a6';
-            console.log('✅ Updated currentState:', currentStateEl.textContent);
-        } else {
-            console.error('❌ currentState element not found');
-        }
-
-        // Update today's toggles
-        const todayTogglesEl = document.getElementById('todayToggles');
-        if (todayTogglesEl) {
-            todayTogglesEl.textContent = data.today_stats ? data.today_stats.total_toggles : '0';
-            console.log('✅ Updated todayToggles:', todayTogglesEl.textContent);
-        } else {
-            console.error('❌ todayToggles element not found');
-        }
-
-        // Update lifetime toggles
-        const lifetimeTogglesEl = document.getElementById('lifetimeToggles');
-        if (lifetimeTogglesEl) {
-            lifetimeTogglesEl.textContent = data.total_lifetime_toggles.toLocaleString();
-            console.log('✅ Updated lifetimeToggles:', lifetimeTogglesEl.textContent);
-        } else {
-            console.error('❌ lifetimeToggles element not found');
-        }
-
-        // Update unique sessions
-        const uniqueSessionsEl = document.getElementById('uniqueSessions');
-        if (uniqueSessionsEl) {
-            uniqueSessionsEl.textContent = data.today_stats ? data.today_stats.unique_sessions : '0';
-            console.log('✅ Updated uniqueSessions:', uniqueSessionsEl.textContent);
-        } else {
-            console.error('❌ uniqueSessions element not found');
-        }
-
-        // Update recent activities
-        this.updateRecentActivities(data.recent_activities);
-    }
-
-    updateRecentActivities(activities) {
-        const activityListEl = document.getElementById('activityList');
-        if (!activityListEl) return;
-
-        if (!activities || activities.length === 0) {
-            activityListEl.innerHTML = '<div class="loading-state">No recent activity</div>';
-            return;
-        }
-
-        const activitiesHtml = activities.map(activity => {
-            const date = new Date(activity.timestamp);
-            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const iconClass = activity.action === 'on' ? 'on' : 'off';
-            const actionText = activity.action === 'on' ? 'Turned ON' : 'Turned OFF';
-
-            return `
-                <div class="activity-item">
-                    <div class="activity-action">
-                        <div class="activity-icon ${iconClass}"></div>
-                        <span class="activity-text">${actionText}</span>
-                    </div>
-                    <span class="activity-time">${timeStr}</span>
-                </div>
-            `;
-        }).join('');
-
-        activityListEl.innerHTML = activitiesHtml;
-    }
-
-    // Cleanup method for proper memory management
-    destroy() {
-        // Clear intervals
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
-
-        // Remove all event listeners
-        this.eventCleanup.forEach(cleanup => cleanup());
-        this.eventCleanup = [];
-
-        // Clear particles
-        this.particles.forEach(particle => {
-            if (particle.parentNode) {
-                particle.remove();
-            }
-        });
-        this.particles = [];
-
-        console.log('LampApp destroyed and cleaned up');
-    }
-
-}
-
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('🎯 DOM loaded - starting initialization...');
-
-    // Simple test function
-    window.testStats = async () => {
-        console.log('🧪 Testing stats display...');
-        try {
-            const response = await fetch('/api/v1/lamp/dashboard');
-            const data = await response.json();
-            console.log('📊 Got data:', data);
-
-            // Direct DOM updates
-            const elements = {
-                currentState: document.getElementById('currentState'),
-                todayToggles: document.getElementById('todayToggles'),
-                lifetimeToggles: document.getElementById('lifetimeToggles'),
-                uniqueSessions: document.getElementById('uniqueSessions')
-            };
-
-            console.log('🎯 Elements found:', Object.fromEntries(
-                Object.entries(elements).map(([k, v]) => [k, !!v])
-            ));
-
-            if (elements.currentState) {
-                elements.currentState.textContent = data.current_state.is_on ? '🔥 ON' : '🌙 OFF';
-                elements.currentState.style.color = data.current_state.is_on ? '#f1c40f' : '#95a5a6';
-                console.log('✅ Updated currentState');
-            }
-            if (elements.todayToggles) {
-                elements.todayToggles.textContent = data.today_stats.total_toggles;
-                console.log('✅ Updated todayToggles to:', data.today_stats.total_toggles);
-            }
-            if (elements.lifetimeToggles) {
-                elements.lifetimeToggles.textContent = data.total_lifetime_toggles;
-                console.log('✅ Updated lifetimeToggles to:', data.total_lifetime_toggles);
-            }
-            if (elements.uniqueSessions) {
-                elements.uniqueSessions.textContent = data.today_stats.unique_sessions;
-                console.log('✅ Updated uniqueSessions to:', data.today_stats.unique_sessions);
-            }
-
-            return 'Stats updated successfully!';
-        } catch (error) {
-            console.error('❌ Test failed:', error);
-            return 'Test failed: ' + error.message;
-        }
+  constructor(options = {}) {
+    // Configurable physics & timings
+    this.cfg = Object.assign({
+      pullThreshold: 50,
+      maxPull: 150,
+      maxSway: 80,
+      springForce: 0.12,
+      damping: 0.88,
+      dashboardUrl: '/api/v1/lamp/dashboard',
+      toggleUrl: '/api/v1/lamp/toggle',
+      syncIntervalMs: 5000,
+      maxParticles: 25,
+      particleLifetimeMs: 3000
+    }, options);
+
+    // Cached DOM references (defensive)
+    this.dom = {
+      lamp: document.getElementById('lamp'),
+      stringHandle: document.getElementById('stringHandle'),
+      stringPath: document.getElementById('stringPath'),
+      stringHighlight: document.getElementById('stringHighlight'),
+      stringSvg: document.querySelector('.string-svg'),
+      particlesContainer: document.getElementById('particles'),
+      todayToggles: document.getElementById('todayToggles'),
+      currentState: document.getElementById('currentState'),
+      lifetimeToggles: document.getElementById('lifetimeToggles'),
+      uniqueSessions: document.getElementById('uniqueSessions'),
+      activityList: document.getElementById('activityList'),
+      html: document.documentElement
     };
 
-    // Force update stats immediately
-    window.forceUpdateStats = () => {
-        if (window.lampApp) {
-            console.log('🔄 Force updating dashboard...');
-            window.lampApp.loadDashboard();
-        }
-    };    if (!window.lampApp) {
-        window.lampApp = new LampApp();
-
-        // Test stats immediately after app initialization
-        setTimeout(window.testStats, 2000);
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            if (window.lampApp && typeof window.lampApp.destroy === 'function') {
-                window.lampApp.destroy();
-            }
-        });
+    // Basic guard: abort init if essential DOM missing
+    if (!this.dom.lamp || !this.dom.stringHandle || !this.dom.stringPath || !this.dom.stringSvg) {
+      console.warn('LampApp: essential DOM elements missing. Aborting initialization.');
+      return;
     }
+
+    // State
+    this.isOn = this.dom.lamp.classList.contains('on');
+    this.isAnimating = false;
+    this.isDragging = false;
+    this.isRecoiling = false;
+    this.particles = [];
+    this.eventCleanup = [];
+    this.updateIntervalId = null;
+    this.syncController = null; // AbortController for dashboard fetches
+
+    // Drag/physics
+    this.dragStart = { x: 0, y: 0 };
+    this.current = { pull: 0, sway: 0 };
+    this.velocity = { x: 0, y: 0 };
+
+    // String points (5 points)
+    this.stringPoints = Array.from({ length: 5 }, (_, i) => ({ x: 60, y: i * 20, vx: 0, vy: 0 }));
+
+    // Initialize
+    this._rafIds = new Set();
+    this.init();
+  }
+
+  /* ----------------------
+     Initialization
+  ---------------------- */
+  init() {
+    console.info('LampApp: init');
+    this.bindEvents();
+    this.createInitialParticles();
+    this.updateStringCurve(); // sets initial d path for stringPath/highlight
+    this.updateHandlePosition(); // sets initial handle transform/position
+    this.startPeriodicSync();
+    this.loadDashboard().catch(() => {}); // load dashboard once
+    this.animateEntranceSafely();
+  }
+
+  /* ----------------------
+     Event binding / cleanup
+  ---------------------- */
+  bindEvents() {
+    const { lamp } = this.dom;
+
+    // lamp click & keyboard (Enter/Space)
+    const onLampClick = (e) => {
+      // ignore clicks on pull-string container (so dragging doesn't toggle by accident)
+      if (e.target.closest && e.target.closest('.pull-string-container')) return;
+      this.toggleLampState('user');
+    };
+    const onLampKey = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.toggleLampState('keyboard');
+      }
+    };
+
+    lamp.addEventListener('click', onLampClick);
+    lamp.addEventListener('keydown', onLampKey);
+    this.eventCleanup.push(() => lamp.removeEventListener('click', onLampClick));
+    this.eventCleanup.push(() => lamp.removeEventListener('keydown', onLampKey));
+
+    // global key 'l' toggles lamp
+    const onGlobalKey = (e) => {
+      if (e.key && e.key.toLowerCase() === 'l') this.toggleLampState('shortcut');
+    };
+    document.addEventListener('keydown', onGlobalKey);
+    this.eventCleanup.push(() => document.removeEventListener('keydown', onGlobalKey));
+
+    // beforeunload: save minimal state (non-blocking)
+    const onBeforeUnload = () => {
+      try { localStorage.setItem('lampState', JSON.stringify({ isOn: this.isOn })); } catch (err) {}
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    this.eventCleanup.push(() => window.removeEventListener('beforeunload', onBeforeUnload));
+
+    // Drag events for string (mouse & touch)
+    this._bindDragHandlers();
+  }
+
+  _bindDragHandlers() {
+    const elements = [this.dom.stringSvg, this.dom.stringHandle].filter(Boolean);
+    const start = (e) => this._startDrag(e);
+    const move = (e) => this._onDrag(e);
+    const end = (e) => this._endDrag(e);
+
+    elements.forEach(el => {
+      el.addEventListener('mousedown', start);
+      el.addEventListener('touchstart', start, { passive: false });
+      el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+      this.eventCleanup.push(() => el.removeEventListener('mousedown', start));
+      this.eventCleanup.push(() => el.removeEventListener('touchstart', start));
+    });
+
+    // global move/end
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', end);
+    document.addEventListener('touchmove', move, { passive: false });
+    document.addEventListener('touchend', end);
+    this.eventCleanup.push(() => document.removeEventListener('mousemove', move));
+    this.eventCleanup.push(() => document.removeEventListener('mouseup', end));
+    this.eventCleanup.push(() => document.removeEventListener('touchmove', move));
+    this.eventCleanup.push(() => document.removeEventListener('touchend', end));
+  }
+
+  /* ----------------------
+     Drag handlers & physics
+  ---------------------- */
+  _startDrag(e) {
+    // prevent text selection/scroll while dragging
+    if (e.cancelable) e.preventDefault();
+
+    this.isDragging = true;
+    this.isRecoiling = false;
+    this.velocity = { x: 0, y: 0 };
+
+    const t = e.touches && e.touches[0] ? e.touches[0] : e;
+    this.dragStart = { x: t.clientX, y: t.clientY };
+
+    // UI feedback
+    this.dom.stringSvg.style.cursor = 'grabbing';
+    this.dom.stringHandle.classList && this.dom.stringHandle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+  }
+
+  _onDrag(e) {
+    if (!this.isDragging) return;
+    if (e.cancelable) e.preventDefault();
+
+    const t = e.touches && e.touches[0] ? e.touches[0] : e;
+    const delta = { x: t.clientX - this.dragStart.x, y: t.clientY - this.dragStart.y };
+
+    // update current pull/sway clamped to config
+    this.current.pull = Math.max(0, Math.min(delta.y, this.cfg.maxPull));
+    this.current.sway = Math.max(-this.cfg.maxSway, Math.min(delta.x * 0.8, this.cfg.maxSway));
+    this.velocity = { x: delta.x * 0.08, y: delta.y * 0.08 };
+
+    this.updateStringCurve();
+    this.updateHandlePosition();
+
+    // small rotation for visual feedback
+    const lastPoint = this.stringPoints[this.stringPoints.length - 1];
+    const intensity = Math.min(1, this.current.pull / this.cfg.maxPull);
+    this.dom.stringHandle.setAttribute('transform', `rotate(${this.current.sway * 0.08} ${lastPoint.x} ${lastPoint.y}) scale(${1 + intensity * 0.12})`);
+  }
+
+  _endDrag() {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+
+    // reset UI
+    this.dom.stringSvg.style.cursor = 'grab';
+    this.dom.stringHandle.classList && this.dom.stringHandle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+
+    // trigger or recoil based on threshold
+    if (this.current.pull >= this.cfg.pullThreshold) {
+      this._triggerPullAnimation();
+    } else {
+      this._startSpaghettiRecoil();
+    }
+  }
+
+  /* ----------------------
+     String drawing helpers
+  ---------------------- */
+  updateStringCurve() {
+    // recompute stringPoints influenced by current.pull and current.sway
+    for (let i = 0; i < 5; i++) {
+      const p = this.stringPoints[i];
+      p.x = 60;      // reset base x
+      p.y = i * 20;  // reset base y
+    }
+
+    const forceStrength = this.current.pull / this.cfg.maxPull;
+
+    // Build path with quadratic segments — keep structure predictable
+    let pathData = `M 60 0`;
+    for (let i = 1; i < 5; i++) {
+      const influence = Math.pow(i / 4, 1.5);
+      const point = this.stringPoints[i];
+      point.y += this.current.pull * influence * 0.4;
+      const swayOffset = this.current.sway * influence * 0.6;
+      point.x += swayOffset + Math.sin(i * 0.8) * swayOffset * 0.3;
+      if (i > 1) point.y += forceStrength * 15 * Math.sin(i * 0.5);
+
+      // Append quadratic to next anchor (keep consistent pattern)
+      const next = this.stringPoints[Math.min(i + 1, 4)];
+      pathData += ` Q ${Math.round(point.x)} ${Math.round(point.y)} ${Math.round(next.x)} ${Math.round(next.y)}`;
+    }
+
+    // Apply to both main path and highlight if available
+    this.dom.stringPath.setAttribute('d', pathData);
+    if (this.dom.stringHighlight) this.dom.stringHighlight.setAttribute('d', pathData);
+  }
+
+  updateHandlePosition() {
+    // Keep handle at last point
+    const last = this.stringPoints[4];
+    if (!last) return;
+
+    // If stringHandle is an SVG element with cx/cy attributes
+    try {
+      if ('setAttribute' in this.dom.stringHandle) {
+        this.dom.stringHandle.setAttribute('cx', String(last.x));
+        this.dom.stringHandle.setAttribute('cy', String(last.y));
+        // ensure transform reflects current sway/pull
+        const scale = 1 + (this.current.pull / this.cfg.maxPull) * 0.1;
+        this.dom.stringHandle.setAttribute('transform', `rotate(${this.current.sway * 0.08} ${last.x} ${last.y}) scale(${scale})`);
+      }
+    } catch (err) {
+      // ignore if not SVG
+      // console.debug('updateHandlePosition: handle not svg-like', err);
+    }
+  }
+
+  /* ----------------------
+     Recoil animation (rAF)
+  ---------------------- */
+  _startSpaghettiRecoil() {
+    this.isRecoiling = true;
+    if (this._recoilLoopId) cancelAnimationFrame(this._recoilLoopId);
+    const loop = () => {
+      if (!this.isRecoiling) return;
+      // simple spring physics towards base positions
+      let energy = 0;
+      for (let i = 1; i < 5; i++) {
+        const pt = this.stringPoints[i];
+        const targetX = 60;
+        const targetY = i * 20;
+        const fx = (targetX - pt.x) * this.cfg.springForce;
+        const fy = (targetY - pt.y) * this.cfg.springForce;
+
+        pt.vx = (pt.vx + fx) * this.cfg.damping;
+        pt.vy = (pt.vy + fy) * this.cfg.damping;
+        pt.x += pt.vx;
+        pt.y += pt.vy;
+        energy += Math.abs(pt.vx) + Math.abs(pt.vy);
+      }
+
+      // apply to current pull/sway (natural damping)
+      this.velocity.y = (this.velocity.y - this.current.pull * this.cfg.springForce * 0.5) * this.cfg.damping;
+      this.velocity.x = (this.velocity.x - this.current.sway * this.cfg.springForce * 0.5) * this.cfg.damping;
+      this.current.pull = Math.max(-30, Math.min(this.cfg.maxPull, this.current.pull + this.velocity.y));
+      this.current.sway = Math.max(-this.cfg.maxSway, Math.min(this.cfg.maxSway, this.current.sway + this.velocity.x));
+
+      this.updateStringCurve();
+      this.updateHandlePosition();
+
+      if (energy > 0.5 || Math.abs(this.current.pull) > 0.5 || Math.abs(this.current.sway) > 0.5) {
+        this._recoilLoopId = requestAnimationFrame(loop);
+        this._rafIds.add(this._recoilLoopId);
+      } else {
+        this._rafIds.delete(this._recoilLoopId);
+        this.finishSpaghettiRecoil();
+      }
+    };
+    this._recoilLoopId = requestAnimationFrame(loop);
+    this._rafIds.add(this._recoilLoopId);
+  }
+
+  finishSpaghettiRecoil() {
+    this.isRecoiling = false;
+    this.velocity = { x: 0, y: 0 };
+    // If anime.js present, do a nice elastic settle; otherwise linear settle
+    if (typeof anime !== 'undefined') {
+      anime({
+        targets: { p: this.current.pull, s: this.current.sway },
+        p: 0, s: 0,
+        duration: 700,
+        easing: 'easeOutElastic(1, 0.8)',
+        update: (anim) => {
+          this.current.pull = anim.animations[0].currentValue;
+          this.current.sway = anim.animations[1].currentValue;
+          this.updateStringCurve();
+          this.updateHandlePosition();
+        },
+        complete: () => this.resetStringPosition()
+      });
+    } else {
+      // fallback: quick linear reset
+      this.current.pull = 0; this.current.sway = 0;
+      this.updateStringCurve();
+      this.updateHandlePosition();
+      this.resetStringPosition();
+    }
+  }
+
+  /* ----------------------
+     Pull-trigger animation & toggle
+  ---------------------- */
+  _triggerPullAnimation() {
+    // stop any ongoing recoil
+    this.isRecoiling = false;
+    if (typeof anime !== 'undefined') {
+      anime({
+        targets: { p: this.current.pull, s: this.current.sway },
+        p: this.current.pull + 25, s: this.current.sway * 1.3,
+        duration: 120,
+        easing: 'easeOutQuad',
+        update: (anim) => {
+          this.current.pull = anim.animations[0].currentValue;
+          this.current.sway = anim.animations[1].currentValue;
+          this.updateStringCurve();
+          this.updateHandlePosition();
+        },
+        complete: () => {
+          // secondary wobble
+          anime({
+            targets: { p: this.current.pull, s: this.current.sway },
+            p: [this.current.pull + 25, -20, 15, -8, 3, 0],
+            s: [this.current.sway * 1.3, this.current.sway * -0.4, this.current.sway * 0.2, this.current.sway * -0.1, 0],
+            duration: 1000,
+            easing: 'easeOutElastic(1, 0.6)',
+            update: (anim) => {
+              this.current.pull = anim.animations[0].currentValue;
+              this.current.sway = anim.animations[1].currentValue;
+              this.updateStringCurve();
+              this.updateHandlePosition();
+            },
+            complete: () => this.resetStringPosition()
+          });
+        }
+      });
+    } else {
+      // no anime - quick fallback and reset
+      setTimeout(() => this.resetStringPosition(), 800);
+    }
+
+    // Slight debounce to prevent double toggles
+    if (this.isAnimating) return;
+    this.isAnimating = true;
+    setTimeout(() => { this.isAnimating = false; }, 800);
+
+    // Toggle lamp (user-initiated)
+    this.toggleLampState('pull');
+  }
+
+  resetStringPosition() {
+    const originalPath = 'M 60 0 Q 60 20 60 40 Q 60 60 60 80';
+    try {
+      this.dom.stringPath.setAttribute('d', originalPath);
+      if (this.dom.stringHighlight) this.dom.stringHighlight.setAttribute('d', originalPath);
+      this.dom.stringHandle.setAttribute('cx', '60');
+      this.dom.stringHandle.setAttribute('cy', '80');
+      this.dom.stringHandle.removeAttribute('transform');
+    } catch (err) {
+      // ignore if DOM shape different
+    }
+
+    // reset internal points
+    this.stringPoints = Array.from({ length: 5 }, (_, i) => ({ x: 60, y: i * 20, vx: 0, vy: 0 }));
+    this.current.pull = 0; this.current.sway = 0;
+    this.velocity = { x: 0, y: 0 };
+  }
+
+  /* ----------------------
+     Lamp state toggle + backend sync
+  ---------------------- */
+  async toggleLampState(source = 'user') {
+    if (this.isAnimating) return;
+    console.debug('toggleLampState:', source);
+    this.isAnimating = true;
+
+    // local optimistic toggle
+    this.isOn = !this.isOn;
+    this.updateLampVisuals();
+
+    // Call API (non-blocking). Use abort controller to avoid old requests interfering.
+    try {
+      const controller = new AbortController();
+      const sig = controller.signal;
+      // short timeout fallback: if no response in 3s, abort (improves responsiveness)
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const res = await fetch(this.cfg.toggleUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toggle: true, source }),
+        signal: sig
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null) || {};
+        if (typeof data.is_on === 'boolean' && data.is_on !== this.isOn) {
+          this.isOn = data.is_on;
+          this.updateLampVisuals();
+        }
+        // slight delay before dashboard refresh to let backend write
+        setTimeout(() => this.loadDashboard().catch(() => {}), 120);
+      }
+    } catch (err) {
+      // network error or abort -> keep optimistic UI, but inform console
+      console.warn('toggleLampState: toggle API failed or timed out', err);
+    } finally {
+      // clear animation lock after short delay to allow visual animations to complete
+      setTimeout(() => { this.isAnimating = false; }, 700);
+    }
+  }
+
+  updateLampVisuals() {
+    // toggle classes
+    this.dom.lamp.classList.toggle('on', this.isOn);
+    this.dom.lamp.classList.toggle('off', !this.isOn);
+    // update document title and theme
+    document.title = `Lamp App - ${this.isOn ? 'ON' : 'OFF'}`;
+    this.dom.html.setAttribute('data-theme', this.isOn ? 'light' : 'dark');
+
+    // animate lamp swing & glow if anime available
+    if (typeof anime !== 'undefined') {
+      // small swing
+      anime({
+        targets: this.dom.lamp,
+        rotate: [
+          { value: -3, duration: 200, easing: 'easeOutQuad' },
+          { value: 2, duration: 200, easing: 'easeInOutQuad' },
+          { value: -1, duration: 200, easing: 'easeInOutQuad' },
+          { value: 0, duration: 300, easing: 'easeOutElastic(1, 0.3)' }
+        ]
+      });
+
+      // bulb & glow effects
+      if (this.isOn) {
+        anime({ targets: '.light-glow', scale: [0.8, 1.08, 1], duration: 600, easing: 'easeOutElastic(1, 0.4)' });
+        anime({ targets: '.bulb-glass', scale: [1, 1.06, 1], duration: 500, easing: 'easeOutElastic(1, 0.3)' });
+        anime({ targets: '.shade-body', scale: [1, 1.02, 1], duration: 400, easing: 'easeOutQuad' });
+      } else {
+        anime({ targets: '.light-glow', scale: 1, duration: 300, easing: 'easeOutQuad' });
+        anime({ targets: '.bulb-glass', scale: [1, 0.98, 1], duration: 300, easing: 'easeOutQuad' });
+        anime({ targets: '.shade-body', scale: 1, duration: 300, easing: 'easeOutQuad' });
+      }
+    } else {
+      // fallback: ensure CSS classes reflect state (already done above)
+    }
+
+    // trigger particle burst when turning on
+    if (this.isOn) this.triggerLightParticles();
+  }
+
+  /* ----------------------
+     Particles (ambient & light)
+  ---------------------- */
+  createInitialParticles() {
+    const count = window.innerWidth < 768 ? Math.floor(this.cfg.maxParticles * 0.6) : this.cfg.maxParticles;
+    for (let i = 0; i < count; i++) this._createAmbientParticle();
+  }
+
+  _createAmbientParticle() {
+    if (!this.dom.particlesContainer) return;
+    const el = document.createElement('div');
+    el.className = 'particle';
+    const size = Math.random() * 4 + 2;
+    const x = Math.random() * window.innerWidth;
+    const y = Math.random() * window.innerHeight;
+    const delay = Math.random() * 3;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.animationDelay = `${delay}s`;
+    this.dom.particlesContainer.appendChild(el);
+    this.particles.push(el);
+
+    // schedule removal
+    setTimeout(() => {
+      if (el.parentNode) el.remove();
+      const idx = this.particles.indexOf(el);
+      if (idx > -1) this.particles.splice(idx, 1);
+    }, this.cfg.particleLifetimeMs + delay * 1000);
+  }
+
+  triggerLightParticles() {
+    // warm light rays from lamp center
+    const lampRect = this.dom.lamp.getBoundingClientRect();
+    const lampCenterX = lampRect.left + lampRect.width / 2;
+    const lampCenterY = lampRect.top + 80;
+
+    const makeRay = (i) => {
+      const el = document.createElement('div');
+      el.style.position = 'fixed';
+      el.style.left = `${lampCenterX}px`;
+      el.style.top = `${lampCenterY}px`;
+      el.style.width = '8px';
+      el.style.height = '8px';
+      el.style.background = 'radial-gradient(circle,#fff8dc,#ffd700)';
+      el.style.borderRadius = '50%';
+      el.style.pointerEvents = 'none';
+      el.style.zIndex = 100;
+      el.style.boxShadow = '0 0 10px #ffd700';
+      document.body.appendChild(el);
+
+      const angle = (i / 12) * Math.PI * 2;
+      const distance = 100 + Math.random() * 50;
+      const endX = Math.cos(angle) * distance;
+      const endY = Math.sin(angle) * distance + 30;
+
+      if (typeof anime !== 'undefined') {
+        anime({
+          targets: el,
+          translateX: endX,
+          translateY: endY,
+          scale: [0, 1.5, 0],
+          opacity: [0, 1, 0],
+          duration: 1200,
+          easing: 'easeOutQuad',
+          complete: () => el.remove()
+        });
+      } else {
+        // fallback: simple fade + translate using CSS transitions
+        el.style.transition = 'transform 1200ms ease-out, opacity 1200ms ease-out';
+        requestAnimationFrame(() => {
+          el.style.transform = `translate(${endX}px, ${endY}px) scale(1.2)`;
+          el.style.opacity = '0';
+          setTimeout(() => el.remove(), 1200);
+        });
+      }
+    };
+
+    // create rays
+    for (let i = 0; i < 12; i++) setTimeout(() => makeRay(i), i * 80);
+
+    // ambient glows
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        const glow = document.createElement('div');
+        glow.style.position = 'fixed';
+        glow.style.left = `${lampCenterX}px`;
+        glow.style.top = `${lampCenterY + 40}px`;
+        glow.style.width = '20px';
+        glow.style.height = '20px';
+        glow.style.background = 'radial-gradient(circle, rgba(255,248,220,0.6), transparent)';
+        glow.style.borderRadius = '50%';
+        glow.style.pointerEvents = 'none';
+        glow.style.zIndex = 99;
+        glow.style.filter = 'blur(8px)';
+        document.body.appendChild(glow);
+
+        const randomX = (Math.random() - 0.5) * 200;
+        const randomY = Math.random() * 100 + 50;
+        if (typeof anime !== 'undefined') {
+          anime({
+            targets: glow,
+            translateX: randomX,
+            translateY: randomY,
+            scale: [0, 2, 0],
+            opacity: [0, 0.8, 0],
+            duration: 2000,
+            easing: 'easeOutCubic',
+            complete: () => glow.remove()
+          });
+        } else {
+          glow.style.transition = 'transform 2000ms ease-out, opacity 2000ms ease-out';
+          requestAnimationFrame(() => {
+            glow.style.transform = `translate(${randomX}px, ${randomY}px) scale(2)`;
+            glow.style.opacity = '0';
+            setTimeout(() => glow.remove(), 2000);
+          });
+        }
+      }, i * 150);
+    }
+  }
+
+  /* ----------------------
+     Dashboard: fetch & render
+     - Abort previous fetch when new one starts
+     - Defensive parsing & rendering (won't crash on malformed data)
+  ---------------------- */
+  async loadDashboard() {
+    // Abort previous
+    if (this.syncController) {
+      try { this.syncController.abort(); } catch (e) {}
+      this.syncController = null;
+    }
+    this.syncController = new AbortController();
+    const signal = this.syncController.signal;
+
+    // Update title while loading for feedback
+    const prevTitle = document.title;
+    document.title = 'Loading... - Lamp App';
+
+    try {
+      const res = await fetch(this.cfg.dashboardUrl, { signal, cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      this._safeUpdateDashboard(data);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.debug('loadDashboard: aborted previous request');
+      } else {
+        console.warn('loadDashboard failed:', err);
+        // fallback to safe defaults
+        this._safeUpdateDashboard({
+          current_state: { is_on: this.isOn },
+          today_stats: { total_toggles: 0, unique_sessions: 0 },
+          total_lifetime_toggles: 0,
+          recent_activities: []
+        });
+      }
+    } finally {
+      document.title = prevTitle;
+      this.syncController = null;
+    }
+  }
+
+  _safeUpdateDashboard(data = {}) {
+    // defensive data extraction
+    try {
+      const isOn = !!(data.current_state && data.current_state.is_on);
+      this.isOn = isOn;
+      this.updateLampVisuals();
+
+      // update small stats if present
+      if (this.dom.todayToggles) {
+        this.dom.todayToggles.textContent = String((data.today_stats && typeof data.today_stats.total_toggles === 'number') ? data.today_stats.total_toggles : '0');
+      }
+      if (this.dom.lifetimeToggles) {
+        const lifetime = typeof data.total_lifetime_toggles === 'number' ? data.total_lifetime_toggles : 0;
+        this.dom.lifetimeToggles.textContent = lifetime.toLocaleString();
+      }
+      if (this.dom.uniqueSessions) {
+        this.dom.uniqueSessions.textContent = String((data.today_stats && typeof data.today_stats.unique_sessions === 'number') ? data.today_stats.unique_sessions : '0');
+      }
+      if (this.dom.currentState) {
+        // nice short indicator
+        this.dom.currentState.textContent = this.isOn ? '🔥 ON' : '🌙 OFF';
+        this.dom.currentState.style.color = this.isOn ? '#f1c40f' : '#95a5a6';
+      }
+
+      // recent activities
+      this._renderRecentActivities(data.recent_activities || []);
+    } catch (err) {
+      console.error('dashboard render failed (defensive):', err);
+    }
+  }
+
+  _renderRecentActivities(activities = []) {
+    const container = this.dom.activityList;
+    if (!container) return;
+
+    // Clear quickly
+    container.innerHTML = '';
+
+    if (!Array.isArray(activities) || activities.length === 0) {
+      const noAct = document.createElement('div');
+      noAct.className = 'loading-state';
+      noAct.textContent = 'No recent activity';
+      container.appendChild(noAct);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    const max = Math.min(50, activities.length);
+    for (let i = 0; i < max; i++) {
+      const a = activities[i];
+      const item = document.createElement('div');
+      item.className = 'activity-item';
+
+      const left = document.createElement('div');
+      left.className = 'activity-action';
+
+      const icon = document.createElement('div');
+      const isOn = (a.action === 'on' || a.action === 'toggle_on' || a.action === true);
+      icon.className = `activity-icon ${isOn ? 'on' : 'off'}`;
+      icon.setAttribute('aria-hidden', 'true');
+
+      const text = document.createElement('span');
+      text.className = 'activity-text';
+      text.textContent = isOn ? 'Turned ON' : 'Turned OFF';
+
+      left.appendChild(icon);
+      left.appendChild(text);
+
+      const time = document.createElement('span');
+      time.className = 'activity-time';
+      // safe timestamp formatting
+      try {
+        const d = new Date(a.timestamp || a.ts || a.time || Date.now());
+        time.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (err) {
+        time.textContent = '-';
+      }
+
+      item.appendChild(left);
+      item.appendChild(time);
+      frag.appendChild(item);
+    }
+
+    container.appendChild(frag);
+  }
+
+  /* ----------------------
+     Periodic sync (debounced / guarded)
+  ---------------------- */
+  startPeriodicSync() {
+    // Clear previous if exists
+    if (this.updateIntervalId) clearInterval(this.updateIntervalId);
+
+    // Run once immediately
+    this.loadDashboard().catch(() => {});
+
+    // Then periodic
+    this.updateIntervalId = setInterval(() => {
+      // avoid syncing while user animating or dragging
+      if (this.isAnimating || this.isDragging) return;
+      this.loadDashboard().catch(() => {});
+      // replenish ambient particles if low
+      if (this.particles.length < (this.cfg.maxParticles * 0.6)) this._createAmbientParticle();
+    }, this.cfg.syncIntervalMs);
+  }
+
+  /* ----------------------
+     Entrance animations (safe)
+  ---------------------- */
+  animateEntranceSafely() {
+    if (typeof anime === 'undefined') {
+      // fallback: small CSS-based reveal (no-op here)
+      return;
+    }
+
+    anime.timeline()
+      .add({
+        targets: '.app-header',
+        translateY: [-50, 0],
+        opacity: [0, 1],
+        duration: 700,
+        easing: 'easeOutExpo'
+      })
+      .add({
+        targets: '.lamp-container',
+        scale: [0.6, 1],
+        opacity: [0, 1],
+        duration: 900,
+        easing: 'easeOutElastic(1, 0.5)',
+        offset: 150
+      })
+      .add({
+        targets: '.stats-container',
+        translateY: [30, 0],
+        opacity: [0, 1],
+        duration: 700,
+        easing: 'easeOutExpo',
+        offset: 450
+      });
+  }
+
+  /* ----------------------
+     Utility: aggressive cleanup
+  ---------------------- */
+  destroy() {
+    // clear intervals
+    if (this.updateIntervalId) {
+      clearInterval(this.updateIntervalId);
+      this.updateIntervalId = null;
+    }
+    // abort pending fetch
+    if (this.syncController) {
+      try { this.syncController.abort(); } catch (e) {}
+      this.syncController = null;
+    }
+    // cancel rAFs
+    this._rafIds.forEach(id => cancelAnimationFrame(id));
+    this._rafIds.clear();
+
+    // remove events
+    this.eventCleanup.forEach(fn => {
+      try { fn(); } catch (e) {}
+    });
+    this.eventCleanup = [];
+
+    // remove particles
+    this.particles.forEach(p => { try { if (p.parentNode) p.remove(); } catch (e) {} });
+    this.particles = [];
+
+    // remove some inline styles we set
+    try {
+      this.dom.stringSvg.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    } catch (e) {}
+
+    console.info('LampApp: destroyed & cleaned up');
+  }
+}
+
+/* ----------------------
+   Bootstrap on DOMContentLoaded
+---------------------- */
+document.addEventListener('DOMContentLoaded', () => {
+  if (!window.lampApp) {
+    window.lampApp = new LampApp();
+
+    // expose helpers for debugging
+    window.lampAppDebug = {
+      reloadDashboard: () => window.lampApp.loadDashboard().catch(() => {}),
+      destroy: () => window.lampApp.destroy(),
+      toggle: (src) => window.lampApp.toggleLampState(src || 'debug')
+    };
+  }
 });

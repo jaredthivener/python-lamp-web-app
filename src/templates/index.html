@@ -1,72 +1,69 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Interactive Hanging Lamp</title>
+    <meta name="description" content="Interactive hanging lamp with beautiful animations and pull string controls">
+
+    <!-- Styles -->
     <link rel="stylesheet" href="/static/style.css">
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
-    <meta name="description" content="Interactive hanging lamp with beautiful animations and pull string controls">
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+    <script src="/static/script.js" defer></script>
 </head>
 <body>
     <div class="background-gradient"></div>
 
-    <div class="container">
+    <main class="container">
         <header class="app-header">
             <h1 class="app-title">Pull the string to illuminate your space</h1>
         </header>
 
-        <div class="lamp-container">
-            <!-- Ceiling mount -->
+        <section class="lamp-container">
             <div class="ceiling-mount"></div>
-
-            <!-- Hanging cord from ceiling -->
             <div class="hanging-cord"></div>
 
-            <!-- Main lamp fixture -->
-            <div id="lamp" class="hanging-lamp off" aria-label="Toggle lamp" role="button" tabindex="0">
-                <!-- Lamp shade -->
+            <div id="lamp" class="hanging-lamp off" aria-label="Toggle lamp" role="button" tabindex="0" aria-pressed="false">
                 <div class="lamp-shade">
                     <div class="shade-top"></div>
                     <div class="shade-body"></div>
                     <div class="shade-bottom"></div>
                 </div>
 
-                <!-- Light bulb inside shade -->
                 <div class="light-bulb">
                     <div class="bulb-base"></div>
                     <div class="bulb-glass"></div>
                     <div class="bulb-filament"></div>
                 </div>
 
-                <!-- Light glow effect -->
                 <div class="light-glow"></div>
 
-                <!-- Pull string - Single SVG curved string like spaghetti -->
                 <div class="pull-string-container">
-                    <svg class="string-svg" width="120" height="120" viewBox="0 0 120 120">
-                        <path id="stringPath" class="string-path"
+                    <svg class="string-svg" width="120" height="120" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+                        <path class="string-path"
                               d="M 60 0 Q 60 20 60 40 Q 60 60 60 80"
                               stroke="#bdc3c7"
                               stroke-width="3"
                               fill="none"
                               stroke-linecap="round"/>
-                        <!-- String highlight for 3D effect -->
-                        <path id="stringHighlight" class="string-highlight"
+                        <path class="string-highlight"
                               d="M 60 0 Q 60 20 60 40 Q 60 60 60 80"
                               stroke="rgba(255,255,255,0.3)"
                               stroke-width="1"
                               fill="none"
                               stroke-linecap="round"/>
-                        <!-- Orange handle at the end of the string -->
-                        <ellipse id="stringHandle" class="string-handle-svg"
+                        <ellipse class="string-handle-svg"
                                  cx="60" cy="80" rx="9" ry="12"
                                  fill="url(#handleGradient)"
                                  stroke="rgba(0,0,0,0.2)"
                                  stroke-width="0.5"/>
-                        <!-- Gradient definition for handle -->
                         <defs>
                             <linearGradient id="handleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                                 <stop offset="0%" style="stop-color:#FF6B35;stop-opacity:1" />
@@ -77,44 +74,44 @@
                     </svg>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- Statistics Dashboard -->
-        <div class="stats-container">
+        <section class="stats-container">
             <div class="stats-header">
                 <h2>💡 Lamp Statistics</h2>
             </div>
+
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-label">Today's Toggles</div>
                     <div class="stat-value" id="todayToggles">--</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-label">Current State</div>
                     <div class="stat-value" id="currentState">--</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-label">Total Lifetime</div>
                     <div class="stat-value" id="lifetimeToggles">--</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-label">Unique Sessions</div>
                     <div class="stat-value" id="uniqueSessions">--</div>
                 </div>
             </div>
-            <div class="recent-activities">
+
+            <div class="recent-activities" aria-live="polite">
                 <h3>Recent Activity</h3>
-                <div id="activityList" class="activity-list">
-                    <!-- Activities will be loaded here -->
+                <div id="activityList" class="activity-list" aria-live="polite" aria-atomic="false">
+                    <div class="loading-state" id="activityLoading">Loading recent activity…</div>
                 </div>
             </div>
-        </div>
-
-    </div>
+        </section>
+    </main>
 
     <div class="particles" id="particles"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
-    <script src="/static/script.js"></script>
 </body>
 </html>
