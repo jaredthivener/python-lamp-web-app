@@ -1,5 +1,5 @@
 # Multi-stage build for optimized final image with Microsoft ODBC Driver
-FROM python:3.13.5-slim AS builder
+FROM python:3.13.6-slim AS builder
 
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -30,7 +30,7 @@ COPY src/requirements.txt /tmp/requirements.txt
 RUN export PATH="/root/.local/bin:$PATH" && uv pip install --system -r /tmp/requirements.txt
 
 # Production stage
-FROM python:3.13.5-slim
+FROM python:3.13.6-slim
 
 # Set production environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
