@@ -16,7 +16,7 @@ azure-identity==1.19.0
 opencensus-ext-azure==1.1.13
 
 # Additional utilities
-python-dotenv==1.0.1
+python-dotenv==1.1.1
 
 # Security note: Consider using pip-tools to generate hashes for additional security
 # Generate with: pip-compile --generate-hashes requirements.in

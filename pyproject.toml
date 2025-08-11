@@ -34,7 +34,7 @@ dependencies = [
     "azure-keyvault-secrets==4.8.0",
     "azure-identity==1.19.0",
     # Additional utilities
-    "python-dotenv==1.0.1",
+    "python-dotenv==1.1.1",
 ]
 
 [project.optional-dependencies]
