@@ -9,14 +9,14 @@ pydantic==2.11.7
 psycopg2-binary==2.9.10
 
 # Azure SDK for Key Vault
-azure-keyvault-secrets==4.8.0
 azure-identity==1.24.0
+azure-keyvault-secrets==4.10.0
 
 # Azure monitoring
-opencensus-ext-azure==1.1.13
+opencensus-ext-azure==1.1.15
 
 # Additional utilities
-python-dotenv==1.0.1
+python-dotenv==1.1.1
 
 # Security note: Consider using pip-tools to generate hashes for additional security
 # Generate with: pip-compile --generate-hashes requirements.in

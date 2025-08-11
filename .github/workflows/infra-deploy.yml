@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Azure Developer CLI
         uses: Azure/setup-azd@v2
@@ -62,7 +62,7 @@ jobs:
 
       - name: Deploy infrastructure
         run: |
-          azd provision
+          azd provision --no-state
 
     #   - name: Deploy application
     #     run: |
