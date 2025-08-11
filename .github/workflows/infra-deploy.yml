@@ -62,7 +62,7 @@ jobs:
 
       - name: Deploy infrastructure
         run: |
-          azd provision
+          azd provision --no-state
 
     #   - name: Deploy application
     #     run: |
