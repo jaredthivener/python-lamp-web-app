@@ -31,8 +31,8 @@ dependencies = [
     "pyodbc==5.2.0",
     "alembic==1.16.4",
     # Azure SDK for Key Vault
+    "azure-identity==1.24.0",
     "azure-keyvault-secrets==4.10.0",
-    "azure-identity==1.19.0",
     # Additional utilities
     "python-dotenv==1.1.1",
 ]
