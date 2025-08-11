@@ -13,7 +13,7 @@ azure-keyvault-secrets==4.8.0
 azure-identity==1.19.0
 
 # Azure monitoring
-opencensus-ext-azure==1.1.13
+opencensus-ext-azure==1.1.15
 
 # Additional utilities
 python-dotenv==1.0.1
