@@ -14,13 +14,26 @@ class LampApp {
     }
 
     constructor() {
+        console.log('Initializing LampApp...');
         this.lamp = document.getElementById('lamp');
+        if (!this.lamp) {
+            console.error('Lamp element not found in the DOM.');
+        }
         this.stringHandle = document.getElementById('stringHandle');
         this.stringPath = document.getElementById('stringPath');
         this.stringHighlight = document.getElementById('stringHighlight');
         this.stringSvg = document.querySelector('.string-svg');
         this.html = document.documentElement;
         this.particlesContainer = document.getElementById('particles');
+
+        console.log('DOM elements initialized:', {
+            lamp: this.lamp,
+            stringHandle: this.stringHandle,
+            stringPath: this.stringPath,
+            stringHighlight: this.stringHighlight,
+            stringSvg: this.stringSvg,
+            particlesContainer: this.particlesContainer
+        });
 
         this.isOn = false;
         this.particles = [];
@@ -53,6 +66,7 @@ class LampApp {
     }
 
     init() {
+        console.log('Initializing events and syncing with backend...');
         this.bindEvents();
         this.createParticles();
 
@@ -79,6 +93,7 @@ class LampApp {
 
         // Add entrance animation
         this.animateEntrance();
+        console.log('Initialization complete.');
     }
 
     bindEvents() {
@@ -459,11 +474,13 @@ class LampApp {
     }
 
     toggleLampState() {
+        console.log('Toggling lamp state...');
         // Call the API to toggle the lamp
         this.callToggleAPI();
     }
 
     async callToggleAPI() {
+        console.log('Calling toggle API...');
         try {
             const response = await fetch('/api/v1/lamp/toggle', {
                 method: 'POST',
@@ -474,13 +491,16 @@ class LampApp {
 
             if (response.ok) {
                 const data = await response.json();
+                console.log('API response:', data);
                 // Update the lamp state based on API response
                 this.updateLampFromAPI(data);
             } else {
+                console.error('API call failed with status:', response.status);
                 // Fallback to local toggle if API fails
                 this.toggleLampLocal();
             }
         } catch (error) {
+            console.error('Error calling toggle API:', error);
             // Fallback to local toggle if API fails
             this.toggleLampLocal();
         }
@@ -966,20 +986,18 @@ class LampApp {
 
             if (response.ok) {
                 const data = await response.json();
-                this.isOn = data.is_on;
-
-                // Update UI immediately
-                this.updateTheme();
-                document.title = `Lamp App - ${data.status.toUpperCase()}`;
-
-                // Refresh dashboard data immediately for instant stats update
+                // Use unified UI update (adds classes, animations, particles, title)
+                this.updateLampFromAPI(data);
+                // Refresh dashboard for instant stats update
                 this.loadDashboard();
-
             } else {
                 console.error('Toggle failed:', response.status);
+                // Fallback to local visual toggle
+                this.toggleLampLocal();
             }
         } catch (error) {
             console.error('Toggle error:', error);
+            this.toggleLampLocal();
         } finally {
             setTimeout(() => {
                 this.isAnimating = false;
@@ -989,16 +1007,13 @@ class LampApp {
 
 }
 
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    if (!window.lampApp) {
-        window.lampApp = new LampApp();
-
-        // Create some floating particles periodically
-        setInterval(() => {
-            if (window.lampApp && window.lampApp.particles.length < 30) {
-                window.lampApp.createParticle();
-            }
-        }, 2000);
-    }
-});
+// Ensure Anime.js is loaded before using it
+if (typeof anime === 'undefined') {
+    console.error('Anime.js is not loaded. Animations will not work.');
+} else {
+    document.addEventListener('DOMContentLoaded', () => {
+        if (!window.lampApp) {
+            window.lampApp = new LampApp();
+        }
+    });
+}
