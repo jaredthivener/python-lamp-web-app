@@ -1,5 +1,18 @@
 // Lamp Interactive App - Enhanced Hanging Lamp Version
 class LampApp {
+    /**
+     * Generate a cryptographically secure random string of the given length.
+     * @param {number} length
+     * @returns {string}
+     */
+    static generateSecureRandomString(length) {
+        const array = new Uint8Array(length);
+        window.crypto.getRandomValues(array);
+        // Convert to base64url (URL-safe, no padding)
+        return btoa(String.fromCharCode.apply(null, array))
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').substr(0, length);
+    }
+
     constructor() {
         this.lamp = document.getElementById('lamp');
         this.stringHandle = document.getElementById('stringHandle');
@@ -940,7 +953,7 @@ class LampApp {
         try {
             // Generate or reuse session ID
             if (!this.sessionId) {
-                this.sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                this.sessionId = 'sess_' + Date.now() + '_' + LampApp.generateSecureRandomString(12);
             }
 
             const response = await fetch('/api/v1/lamp/toggle', {
