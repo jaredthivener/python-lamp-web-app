@@ -1,6 +1,6 @@
 # 🪔 Interactive Lamp Web App
 
-[![CodeQL](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml/badge.svg)](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml)
+[![Github CodeQL](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml/badge.svg)](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml)
 
 > **Modern containerized Python web application with production-ready Azure infrastructure**
 
