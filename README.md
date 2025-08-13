@@ -1,5 +1,7 @@
 # 🪔 Interactive Lamp Web App
 
+[![CodeQL](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml/badge.svg)](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml)
+
 > **Modern containerized Python web application with production-ready Azure infrastructure**
 
 A beautiful, interactive hanging lamp web application built with FastAPI, featuring modular Bicep infrastructure and modern DevOps practices for seamless Azure deployment.
@@ -23,18 +25,21 @@ A beautiful, interactive hanging lamp web application built with FastAPI, featur
 ## ✨ Features
 
 ### 🎨 **Interactive Experience**
+
 - **Dynamic Lamp Control**: Pull the string to toggle the lamp on/off with realistic physics
 - **Smooth Animations**: Fluid transitions using Anime.js for professional feel
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
 - **Accessibility**: Full keyboard navigation and screen reader support
 
 ### 🏗️ **Architecture**
+
 - **Modular Bicep Infrastructure**: Maintainable, reusable Azure infrastructure as code
 - **Container-First**: Optimized Docker containers with multi-stage builds
 - **Auto-Scaling**: Azure App Service with configurable scaling policies
 - **Zero-Downtime Deployment**: ACR webhooks for continuous deployment
 
 ### 🔒 **Enterprise Security**
+
 - **Managed Identity**: Secure Azure resource authentication without credentials
 - **HTTPS-Only**: TLS encryption enforced across all endpoints
 - **Role-Based Access**: Least privilege ACR access with AcrPull role
@@ -50,7 +55,7 @@ graph TB
         DEV[Developer] -->|git push| GIT[Git Repository]
         GIT -->|docker build| LOCAL[Local Testing]
     end
-    
+
     subgraph "Azure Cloud"
         subgraph "Infrastructure (Bicep)"
             RG[Resource Group]
@@ -61,19 +66,19 @@ graph TB
             AI[Application Insights]
             LA[Log Analytics]
         end
-        
+
         subgraph "Deployment Pipeline"
             BUILD[ACR Build] --> WEBHOOK[ACR Webhook]
             WEBHOOK --> DEPLOY[Auto Deploy]
         end
     end
-    
+
     subgraph "Monitoring"
         LOGS[Centralized Logging]
         METRICS[Performance Metrics]
         ALERTS[Smart Alerts]
     end
-    
+
     DEV -->|az acr build| BUILD
     APP -->|Logs & Metrics| LOGS
     APP -->|Telemetry| METRICS
@@ -83,19 +88,20 @@ graph TB
 
 ### 🧩 **Modular Infrastructure**
 
-| Component | Purpose | Technology |
-|-----------|---------|------------|
-| **🔍 Monitoring** | Observability & logging | Log Analytics + Application Insights |
-| **🔐 Identity** | Secure authentication | System-assigned Managed Identity |
-| **📦 Container Platform** | Image storage & management | Azure Container Registry |
-| **🌐 Compute** | Application hosting | App Service with Linux containers |
-| **🔗 Integration** | CI/CD automation | ACR webhooks + role assignments |
+| Component                 | Purpose                    | Technology                           |
+| ------------------------- | -------------------------- | ------------------------------------ |
+| **🔍 Monitoring**         | Observability & logging    | Log Analytics + Application Insights |
+| **🔐 Identity**           | Secure authentication      | System-assigned Managed Identity     |
+| **📦 Container Platform** | Image storage & management | Azure Container Registry             |
+| **🌐 Compute**            | Application hosting        | App Service with Linux containers    |
+| **🔗 Integration**        | CI/CD automation           | ACR webhooks + role assignments      |
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 ```bash
 # Required tools
 az --version      # Azure CLI
@@ -104,6 +110,7 @@ bicep --version   # Bicep CLI (optional for infrastructure)
 ```
 
 ### 1️⃣ **Clone & Setup**
+
 ```bash
 git clone <repository-url>
 cd python-lamp-web-app
@@ -113,6 +120,7 @@ chmod +x start.sh
 ```
 
 ### 2️⃣ **Local Development**
+
 ```bash
 # Quick start with auto-setup
 ./start.sh
@@ -125,6 +133,7 @@ python3 src/main.py
 ```
 
 ### 3️⃣ **Deploy to Azure**
+
 ```bash
 # Login to Azure
 az login
@@ -165,10 +174,11 @@ az acr build --registry <acr-name> --image lamp-app:latest .
 ```
 
 ### 📁 **Infrastructure Structure**
+
 ```
 infra/
 ├── 📄 main.bicep                    # 🎯 Main orchestration template
-├── ⚙️ main.bicepparam              # 🔧 Modern parameter file  
+├── ⚙️ main.bicepparam              # 🔧 Modern parameter file
 ├── 🔧 bicepconfig.json             # 📋 Bicep linting configuration
 └── 📁 modules/
     ├── 🔍 monitoring.bicep         # Log Analytics + App Insights
@@ -188,7 +198,7 @@ param environmentName = 'dev'           // dev, staging, prod
 param location = 'eastus2'              // Azure region
 param resourceGroupName = 'rg-lamp-web-app-dev'
 
-// App Service Configuration  
+// App Service Configuration
 param appServicePlanSku = 'B1'          // B1, S1, P1v3, etc.
 param appPort = '8000'                  // Application port
 
@@ -206,7 +216,7 @@ For rapid deployment with automated best practices:
 
 # Features:
 # ✅ Infrastructure validation
-# ✅ Resource provisioning  
+# ✅ Resource provisioning
 # ✅ Docker build & push
 # ✅ System-managed identity configuration
 # ✅ Webhook setup for continuous deployment
@@ -229,6 +239,7 @@ az acr build --registry <acr-name> --image lamp-app:latest .
 ## 🔧 Development
 
 ### 📁 **Project Structure**
+
 ```
 python-lamp-web-app/
 ├── 📁 src/                      # 🐍  Python application
@@ -253,12 +264,14 @@ python-lamp-web-app/
 ### 🛠️ **Development Workflow**
 
 1. **🧪 Local Testing**
+
    ```bash
    ./start.sh                    # Start development server
    open http://localhost:8000    # Test functionality
    ```
 
 2. **🏗️ Infrastructure Validation**
+
    ```bash
    cd infra
    bicep build main.bicep        # Validate Bicep syntax
@@ -266,6 +279,7 @@ python-lamp-web-app/
    ```
 
 3. **🐳 Container Testing**
+
    ```bash
    docker build -t lamp-app .
    docker run -p 8000:8000 lamp-app
@@ -290,11 +304,12 @@ Our Docker setup includes modern best practices:
 FROM python:3.13.5-slim as builder
 # ... build dependencies
 
-FROM python:3.13.5-slim as runtime  
+FROM python:3.13.5-slim as runtime
 # ... minimal runtime image
 ```
 
 **Features:**
+
 - ✅ **Multi-stage builds** for smaller images (~150MB)
 - ✅ **Non-root user** for enhanced security
 - ✅ **Health checks** for container monitoring
@@ -325,13 +340,13 @@ curl http://localhost:8000/health
 
 ### 🛡️ **Enterprise Security Features**
 
-| Security Layer | Implementation | Benefit |
-|----------------|----------------|---------|
-| **Identity** | System-assigned Managed Identity | No credential management |
-| **Access** | Azure RBAC with AcrPull role | Least privilege access |
-| **Transport** | HTTPS-only enforcement | Encrypted communication |
-| **Storage** | Private container registry | Secure image storage |
-| **Secrets** | Azure Key Vault integration ready | No hardcoded secrets |
+| Security Layer | Implementation                    | Benefit                  |
+| -------------- | --------------------------------- | ------------------------ |
+| **Identity**   | System-assigned Managed Identity  | No credential management |
+| **Access**     | Azure RBAC with AcrPull role      | Least privilege access   |
+| **Transport**  | HTTPS-only enforcement            | Encrypted communication  |
+| **Storage**    | Private container registry        | Secure image storage     |
+| **Secrets**    | Azure Key Vault integration ready | No hardcoded secrets     |
 
 ### 🔐 **Security Validations**
 
@@ -340,7 +355,7 @@ curl http://localhost:8000/health
 az webapp show --name <app-name> --resource-group <rg> \
   --query "{httpsOnly:httpsOnly, identity:identity.type}"
 
-# Verify role assignments  
+# Verify role assignments
 az role assignment list --assignee <principal-id> \
   --query "[].{Role:roleDefinitionName, Scope:scope}"
 ```
@@ -361,12 +376,14 @@ az role assignment list --assignee <principal-id> \
 ### 📈 **Built-in Observability**
 
 **Real-time Monitoring:**
+
 - 🔍 **Application Insights** - Performance, errors, dependencies
 - 📋 **Log Analytics** - Centralized logging and queries
 - 🚨 **Smart Alerts** - Proactive issue detection
 - 📊 **Custom Dashboards** - Business metrics visualization
 
 **Key Metrics Tracked:**
+
 - Application response times
 - Error rates and exceptions
 - Container resource utilization
@@ -395,18 +412,21 @@ az monitor log-analytics query \
 ### 🔄 **Development Workflow**
 
 1. **🍴 Fork & Clone**
+
    ```bash
    git clone <your-fork>
    cd python-lamp-web-app
    ```
 
 2. **🧪 Test Locally**
+
    ```bash
    ./start.sh
    # Test your changes
    ```
 
 3. **🏗️ Validate Infrastructure**
+
    ```bash
    cd infra
    bicep build main.bicep
@@ -414,6 +434,7 @@ az monitor log-analytics query \
    ```
 
 4. **🐳 Test Container**
+
    ```bash
    docker build -t lamp-app-dev .
    docker run -p 8000:8000 lamp-app-dev
@@ -438,18 +459,21 @@ az monitor log-analytics query \
 ## 🛠️ **Technologies**
 
 ### Backend Stack
+
 - **🐍 FastAPI** - Modern Python web framework
 - **🚀 Uvicorn** - ASGI server for production
 - **🐳 Docker** - Containerization
 - **☁️ Azure App Service** - Cloud hosting
 
-### Frontend Stack  
+### Frontend Stack
+
 - **🎨 Vanilla JavaScript** - Interactive functionality
 - **✨ Anime.js** - Smooth animations
 - **🎨 CSS3** - Modern styling
 - **📱 Responsive Design** - Mobile-first approach
 
 ### Infrastructure
+
 - **🏗️ Azure Bicep** - Infrastructure as Code
 - **🔐 Managed Identity** - Secure authentication
 - **📦 Azure Container Registry** - Private image registry
