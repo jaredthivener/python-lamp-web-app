@@ -1,5 +1,5 @@
 # Multi-stage build for optimized final image with Microsoft ODBC Driver
-FROM python:3.13.6-slim AS builder
+FROM python:3.13.7-slim AS builder
 
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,11 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install system dependencies including Microsoft ODBC Driver
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-        gnupg \
-        build-essential \
-        unixodbc-dev \
-        ca-certificates \
+    curl \
+    gnupg \
+    build-essential \
+    unixodbc-dev \
+    ca-certificates \
     # Add Microsoft repository and key using modern approach
     && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
@@ -30,7 +30,7 @@ COPY src/requirements.txt /tmp/requirements.txt
 RUN export PATH="/root/.local/bin:$PATH" && uv pip install --system -r /tmp/requirements.txt
 
 # Production stage
-FROM python:3.13.6-slim
+FROM python:3.13.7-slim
 
 # Set production environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -40,11 +40,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install runtime dependencies and Microsoft ODBC Driver
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-        gnupg \
-        unixodbc \
-        tini \
-        ca-certificates \
+    curl \
+    gnupg \
+    unixodbc \
+    tini \
+    ca-certificates \
     # Add Microsoft repository and key using modern approach
     && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
