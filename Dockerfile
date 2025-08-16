@@ -1,4 +1,4 @@
-# Multi-stage build for optimized final image with Microsoft ODBC Driver
+# Multi-stage build for optimized final image with PostgreSQL support
 FROM python:3.13.7-slim AS builder
 
 # Set build environment variables
@@ -6,28 +6,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-# Install system dependencies including Microsoft ODBC Driver
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gnupg \
     build-essential \
-    unixodbc-dev \
+    libpq-dev \
     ca-certificates \
-    # Add Microsoft repository and key using modern approach
-    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    # Install Microsoft ODBC Driver for SQL Server
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    # Install uv
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Install uv for faster package management
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Add uv to PATH
 ENV PATH="/root/.local/bin:$PATH"
 
 # Copy and install Python dependencies
 COPY src/requirements.txt /tmp/requirements.txt
-RUN export PATH="/root/.local/bin:$PATH" && uv pip install --system -r /tmp/requirements.txt
+RUN uv pip install --system -r /tmp/requirements.txt
 
 # Production stage
 FROM python:3.13.7-slim
@@ -38,19 +34,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# Install runtime dependencies and Microsoft ODBC Driver
+# Install runtime dependencies for PostgreSQL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gnupg \
-    unixodbc \
+    libpq5 \
     tini \
     ca-certificates \
-    # Add Microsoft repository and key using modern approach
-    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    # Install Microsoft ODBC Driver for SQL Server
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
     # Clean up
     && apt-get autoremove -y \
     && apt-get clean \
@@ -76,9 +65,9 @@ USER appuser
 # Expose port
 EXPOSE ${PORT}
 
-# Optimized health check with tini
+# Health check for FastAPI application
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=2 \
-    CMD curl -f http://localhost:${PORT}/ || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Use tini as init system for proper signal handling
 ENTRYPOINT ["/usr/bin/tini", "--"]
