@@ -10,7 +10,7 @@ from pathlib import Path
 src_path = Path(__file__).parent
 sys.path.insert(0, str(src_path))
 
-from database.database import init_database, db_config
+from database.database import init_database
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
