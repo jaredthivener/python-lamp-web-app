@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 import threading
 import time
 
-from .cache import get_cache_service, CachedLampState, CachedActivity, CachedDailyStats
+from .cache import get_cache_service
 
 logger = logging.getLogger(__name__)
 
