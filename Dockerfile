@@ -43,8 +43,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# Update Debian packages to get security fixes
-RUN apt-get update && apt-get upgrade -y --no-install-recommends
+# NOTE: apt-get upgrade is generally NOT recommended in Dockerfiles
+# Better practice: Rebuild image when base image updates are released
+# Uncomment only if you need critical security patches immediately:
+# RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install runtime dependencies for PostgreSQL
 RUN apt-get update && apt-get install -y --no-install-recommends \
