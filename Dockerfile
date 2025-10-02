@@ -45,15 +45,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # NOTE: apt-get upgrade is generally NOT recommended in Dockerfiles
 # Better practice: Rebuild image when base image updates are released
-# Uncomment only if you need critical security patches immediately:
-# RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Exception: Targeted security updates for critical vulnerabilities (CVE-2025-9230)
 
-# Install runtime dependencies for PostgreSQL
+# Install runtime dependencies for PostgreSQL and update OpenSSL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpq5 \
     tini \
     ca-certificates \
+    openssl \
+    libssl3 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
