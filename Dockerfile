@@ -43,11 +43,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# NOTE: apt-get upgrade is generally NOT recommended in Dockerfiles
-# Better practice: Rebuild image when base image updates are released
-# Exception: Targeted security updates for critical vulnerabilities (CVE-2025-9230)
-
-# Install runtime dependencies for PostgreSQL and update OpenSSL
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpq5 \
