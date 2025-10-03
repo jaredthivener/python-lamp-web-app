@@ -1,7 +1,7 @@
 # Multi-stage build for optimized final image with PostgreSQL support
 # Using specific digest for reproducible builds and security
 ARG PYTHON_VERSION=3.13
-FROM python:${PYTHON_VERSION}.7-slim-bookworm@sha256:fcf02c9e248b995ae2ca9aac6fa24b489f34b589dbfdc44698ad245d2ad41d1e AS builder
+FROM python:${PYTHON_VERSION}.7-slim-bookworm@sha256:adafcc17694d715c905b4c7bebd96907a1fd5cf183395f0ebc4d3428bd22d92d AS builder
 
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -38,7 +38,7 @@ RUN uv pip install --system -r /tmp/requirements.txt \
 # Production stage
 # Using specific digest for reproducible builds and security
 ARG PYTHON_VERSION=3.13
-FROM python:${PYTHON_VERSION}.7-slim-bookworm@sha256:fcf02c9e248b995ae2ca9aac6fa24b489f34b589dbfdc44698ad245d2ad41d1e
+FROM python:${PYTHON_VERSION}.7-slim-bookworm@sha256:adafcc17694d715c905b4c7bebd96907a1fd5cf183395f0ebc4d3428bd22d92d
 
 # Metadata labels for OCI compliance
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
