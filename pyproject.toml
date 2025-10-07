@@ -31,7 +31,7 @@ dependencies = [
     "psycopg2-binary==2.9.10",
     "alembic==1.16.5",
     # Azure SDK for Key Vault
-    "azure-identity==1.25.0",
+    "azure-identity==1.25.1",
     "azure-keyvault-secrets==4.10.0",
     # Additional utilities
     "python-dotenv==1.1.1",
