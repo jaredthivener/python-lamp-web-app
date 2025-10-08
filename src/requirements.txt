@@ -1,5 +1,5 @@
 # Production dependencies with exact versions for security and reproducibility
-fastapi==0.118.0
+fastapi==0.118.2
 uvicorn[standard]==0.37.0
 jinja2==3.1.6
 python-multipart==0.0.20
