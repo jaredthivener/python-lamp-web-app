@@ -6,7 +6,7 @@ python-multipart==0.0.20
 pydantic==2.12.0
 
 # Database dependencies
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
 
 # Azure SDK for Key Vault
 azure-identity==1.25.1
