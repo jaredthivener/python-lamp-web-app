@@ -76,11 +76,11 @@ COPY --from=builder /wheels /tmp/wheels
 COPY --from=builder /tmp/requirements.txt /tmp/requirements.txt
 ENV PATH="/root/.local/bin:$PATH"
 RUN if [ -x "/root/.local/bin/uv" ]; then \
-            /root/.local/bin/uv pip install -r /tmp/requirements.txt; \
-        else \
-            python -m pip install -r /tmp/requirements.txt; \
-        fi \
-        && rm -rf /tmp/wheels /tmp/requirements.txt
+    /root/.local/bin/uv pip install -r /tmp/requirements.txt; \
+    else \
+    python -m pip install -r /tmp/requirements.txt; \
+    fi \
+    && rm -rf /tmp/wheels /tmp/requirements.txt
 
 # Copy source code with proper ownership
 COPY --chown=appuser:appuser src/ ./src/
