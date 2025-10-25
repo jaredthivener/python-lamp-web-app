@@ -39,8 +39,8 @@ fi
 
 # Check Python version
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-REQUIRED_VERSION="3.13"
-if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 13) else 1)" 2>/dev/null; then
+REQUIRED_VERSION="3.14"
+if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
     echo "❌ Python $PYTHON_VERSION found, but this project requires Python $REQUIRED_VERSION or higher"
     echo "   Please upgrade your Python installation"
     exit 1
