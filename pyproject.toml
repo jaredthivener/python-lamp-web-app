@@ -29,7 +29,7 @@ dependencies = [
     # Database dependencies
     "sqlalchemy==2.0.44",
     "psycopg2-binary==2.9.11",
-    "alembic==1.17.0",
+    "alembic==1.17.1",
     # Azure SDK for Key Vault
     "azure-identity==1.25.1",
     "azure-keyvault-secrets==4.10.0",
