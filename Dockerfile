@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------------
 # 🐍 Multi-stage build for FastAPI + PostgreSQL with UV package manager
 # ------------------------------------------------------------------------
-ARG PYTHON_VERSION=3.14
-FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:4ed33101ee7ec299041cc41dd268dae17031184be94384b1ce7936dc4e5dead3 AS builder
+ARG PYTHON_VERSION=3.14.1
+FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:b823ded4377ebb5ff1af5926702df2284e53cecbc6e3549e93a19d8632a1897e AS builder
 
 # Environment setup for clean, fast, reproducible builds
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,7 +33,7 @@ RUN mkdir -p /deps \
 # ------------------------------------------------------------------------
 # 🏗️ Production Stage
 # ------------------------------------------------------------------------
-FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:4ed33101ee7ec299041cc41dd268dae17031184be94384b1ce7936dc4e5dead3
+FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:b823ded4377ebb5ff1af5926702df2284e53cecbc6e3549e93a19d8632a1897e
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
