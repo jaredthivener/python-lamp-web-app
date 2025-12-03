@@ -73,7 +73,7 @@ dive:
 .PHONY: sbom
 sbom:
 	@echo "📦 Displaying SBOM for $(IMAGE_NAME):$(TAG)..."
-	docker sbom $(IMAGE_NAME):$(TAG)
+	syft scan $(IMAGE_NAME):$(TAG) --output table || true
 	@echo "✅ SBOM table displayed successfully."
 
 # ==========================================================
