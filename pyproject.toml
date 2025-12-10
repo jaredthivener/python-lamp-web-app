@@ -27,7 +27,7 @@ dependencies = [
     "python-multipart==0.0.20",
     "pydantic==2.12.5",
     # Database dependencies
-    "sqlalchemy==2.0.44",
+    "sqlalchemy==2.0.45",
     "psycopg2-binary==2.9.11",
     "alembic==1.17.2",
     # Azure SDK for Key Vault
