@@ -9,7 +9,7 @@ pydantic==2.12.5
 psycopg2-binary==2.9.11
 
 # Azure SDK for Key Vault
-azure-identity==1.25.1
+azure-identity==1.25.2
 azure-keyvault-secrets==4.10.0
 
 # Azure monitoring
