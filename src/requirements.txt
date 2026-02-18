@@ -1,6 +1,6 @@
 # Production dependencies with exact versions for security and reproducibility
 fastapi==0.129.0
-uvicorn[standard]==0.40.0
+uvicorn[standard]==0.41.0
 jinja2==3.1.6
 python-multipart==0.0.22
 pydantic==2.12.5
