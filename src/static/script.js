@@ -26,53 +26,208 @@ class LampApp {
         this.html = document.documentElement;
         this.particlesContainer = document.getElementById('particles');
 
-        console.log('DOM elements initialized:', {
-            lamp: this.lamp,
-            stringHandle: this.stringHandle,
-            stringPath: this.stringPath,
-            stringHighlight: this.stringHighlight,
-            stringSvg: this.stringSvg,
-            particlesContainer: this.particlesContainer
-        });
-
         this.isOn = false;
         this.particles = [];
         this.isAnimating = false;
+        this.sessionId = null;
 
-        // Spaghetti string physics
+        // --- Verlet String Physics ---
+        // SVG viewBox is 120×120. String is anchored at (60, 0).
+        this.NUM_NODES = 6;
+        this.SEGMENT_LENGTH = 16; // natural rest length of each segment (SVG units)
+        this.GRAVITY = 0.4;
+        this.DAMPING = 0.97;        // velocity damping per frame (air resistance)
+        this.CONSTRAINT_ITERS = 8;  // distance-constraint solver iterations per frame
+
+        this._initStringNodes();
+
+        // Drag state
         this.isDragging = false;
-        this.dragStartY = 0;
-        this.dragStartX = 0;
-        this.currentPull = 0;
-        this.currentSway = 0;
-        this.velocity = { x: 0, y: 0 };
-        this.pullThreshold = 50;
-        this.maxPull = 150;
-        this.maxSway = 80;
-        this.springForce = 0.12;
-        this.damping = 0.88;
-        this.isRecoiling = false;
+        this.dragSvgX = 60;
+        this.dragSvgY = (this.NUM_NODES - 1) * this.SEGMENT_LENGTH;
 
-        // String curve physics - multiple control points for spaghetti effect
-        this.stringPoints = [
-            { x: 60, y: 0, vx: 0, vy: 0 },   // Top (fixed)
-            { x: 60, y: 20, vx: 0, vy: 0 },  // Control point 1
-            { x: 60, y: 40, vx: 0, vy: 0 },  // Control point 2
-            { x: 60, y: 60, vx: 0, vy: 0 },  // Control point 3
-            { x: 60, y: 80, vx: 0, vy: 0 }   // Bottom (handle attachment)
-        ];
+        // Pull-to-toggle state
+        this.pullThreshold = 45;    // SVG units below rest to trigger toggle
+        this.toggleTriggered = false;
+
+        // rAF handle
+        this._rafId = null;
 
         this.init();
     }
+
+    // -----------------------------------------------------------------------
+    // Verlet String Physics Helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Initialise Verlet nodes. Each node: { x, y, px, py, pinned }
+     * px/py encode the previous position, giving Verlet velocity implicitly.
+     */
+    _initStringNodes() {
+        this.nodes = [];
+        for (let i = 0; i < this.NUM_NODES; i++) {
+            const y = i * this.SEGMENT_LENGTH;
+            this.nodes.push({ x: 60, y, px: 60, py: y, pinned: i === 0 });
+        }
+    }
+
+    /**
+     * One Verlet integration + constraint-solver pass.
+     * When dragging, the last node is pinned to (dragSvgX, dragSvgY).
+     */
+    _stepPhysics() {
+        const n = this.nodes;
+
+        // 1 — Integrate: infer velocity from (current - previous), apply gravity
+        for (let i = 0; i < n.length; i++) {
+            if (n[i].pinned) continue;
+            const vx = (n[i].x - n[i].px) * this.DAMPING;
+            const vy = (n[i].y - n[i].py) * this.DAMPING;
+            n[i].px = n[i].x;
+            n[i].py = n[i].y;
+            n[i].x += vx;
+            n[i].y += vy + this.GRAVITY;
+        }
+
+        // 2 — Hard-pin the last node to the drag target while dragging
+        if (this.isDragging) {
+            const last = n[n.length - 1];
+            last.px = last.x;
+            last.py = last.y;
+            last.x = this.dragSvgX;
+            last.y = this.dragSvgY;
+        }
+
+        // 3 — Enforce segment-length constraints (multiple iterations = stability)
+        for (let iter = 0; iter < this.CONSTRAINT_ITERS; iter++) {
+            // Always re-anchor node 0 first
+            n[0].x = 60; n[0].y = 0;
+
+            for (let i = 0; i < n.length - 1; i++) {
+                const a = n[i];
+                const b = n[i + 1];
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+                const diff = (dist - this.SEGMENT_LENGTH) / dist;
+                const corr = diff * 0.5;
+
+                if (!a.pinned)                                           { a.x += dx * corr; a.y += dy * corr; }
+                if (!b.pinned && !(this.isDragging && i + 1 === n.length - 1)) { b.x -= dx * corr; b.y -= dy * corr; }
+            }
+
+            // Re-anchor node 0 after constraint pass
+            n[0].x = 60; n[0].y = 0;
+        }
+    }
+
+    /**
+     * Convert a mouse/touch client coordinate into SVG user-space coordinates.
+     * Uses the SVG element's own CTM so viewBox scaling, preserveAspectRatio
+     * letterboxing, and any CSS transforms are all handled automatically.
+     */
+    _clientToSvg(clientX, clientY) {
+        const pt = this.stringSvg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        return pt.matrixTransform(this.stringSvg.getScreenCTM().inverse());
+    }
+
+    /**
+     * Render node positions as a smooth quadratic Bézier spline.
+     * Uses midpoint Bézier technique: each original node becomes a control point,
+     * ensuring the path passes smoothly through every midpoint.
+     */
+    _renderString() {
+        const n = this.nodes;
+        if (n.length < 2) return;
+
+        let d = `M ${n[0].x.toFixed(2)} ${n[0].y.toFixed(2)}`;
+
+        for (let i = 0; i < n.length - 1; i++) {
+            const cx = n[i].x.toFixed(2);
+            const cy = n[i].y.toFixed(2);
+            if (i < n.length - 2) {
+                // Middle segments: endpoint is the midpoint → smooth through all interior nodes
+                const mx = ((n[i].x + n[i + 1].x) / 2).toFixed(2);
+                const my = ((n[i].y + n[i + 1].y) / 2).toFixed(2);
+                d += ` Q ${cx} ${cy} ${mx} ${my}`;
+            } else {
+                // Last segment: endpoint IS the last node — no L kink, handle stays on curve
+                d += ` Q ${cx} ${cy} ${n[i + 1].x.toFixed(2)} ${n[i + 1].y.toFixed(2)}`;
+            }
+        }
+
+        const last = n[n.length - 1];
+
+        this.stringPath.setAttribute('d', d);
+        this.stringHighlight.setAttribute('d', d);
+
+        // Position the handle ellipse at the last node (cx/cy only — no scale tricks)
+        this.stringHandle.setAttribute('cx', last.x.toFixed(2));
+        this.stringHandle.setAttribute('cy', last.y.toFixed(2));
+
+        // Rotate the handle to follow the local string direction
+        const prev = n[n.length - 2];
+        const angle = Math.atan2(last.y - prev.y, last.x - prev.x) * (180 / Math.PI) - 90;
+        this.stringHandle.setAttribute('transform',
+            `rotate(${angle.toFixed(1)} ${last.x.toFixed(2)} ${last.y.toFixed(2)})`
+        );
+    }
+
+    /**
+     * Main rAF loop — integrates physics, renders, checks pull threshold.
+     */
+    _animationLoop() {
+        this._stepPhysics();
+        this._renderString();
+
+        // Check pull-to-toggle threshold during active drag
+        if (this.isDragging && !this.toggleTriggered) {
+            const restY = (this.NUM_NODES - 1) * this.SEGMENT_LENGTH;
+            if (this.dragSvgY - restY >= this.pullThreshold) {
+                this.toggleTriggered = true;
+                this._onPullTriggered();
+            }
+        }
+
+        this._rafId = requestAnimationFrame(() => this._animationLoop());
+    }
+
+    /**
+     * Fired when the user has pulled past the threshold.
+     * Releases the drag pin and imparts an upward slingshot velocity.
+     */
+    _onPullTriggered() {
+        // Impart a sharp upward velocity via Verlet's previous-position trick
+        const last = this.nodes[this.nodes.length - 1];
+        const snap = 18; // SVG units of upward snap per frame
+        last.py = last.y + snap; // py > y ⟹ net upward velocity next integration
+        last.px = last.x;
+
+        // Release the drag pin
+        this.isDragging = false;
+        this.stringSvg.style.cursor = 'grab';
+        this.stringHandle.classList.remove('dragging');
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+
+        // Toggle after a short delay so the snap feels causal
+        setTimeout(() => this.toggleLamp(), 120);
+    }
+
+    // -----------------------------------------------------------------------
+    // Initialisation
+    // -----------------------------------------------------------------------
 
     init() {
         console.log('Initializing events and syncing with backend...');
         this.bindEvents();
         this.createParticles();
 
-        // Initialize string and handle positions
-        this.updateStringCurve();
-        this.updateHandlePosition();
+        // Start the Verlet physics + render loop
+        this._animationLoop();
 
         // Sync with backend state on load
         this.syncWithBackend();
@@ -84,12 +239,7 @@ class LampApp {
         setInterval(() => {
             this.syncWithBackend();
             this.loadDashboard();
-        }, 5000); // Update every 5 seconds for more responsive UI
-
-        // Also update position after DOM is fully ready (as backup)
-        requestAnimationFrame(() => {
-            this.updateHandlePosition();
-        });
+        }, 5000);
 
         // Add entrance animation
         this.animateEntrance();
@@ -140,370 +290,70 @@ class LampApp {
     }
 
     bindStringDragEvents() {
-        const stringSvg = this.stringSvg;
-        const stringHandle = this.stringHandle;
-
-        // Mouse events for both SVG string and handle
-        [stringSvg, stringHandle].forEach(element => {
-            element.addEventListener('mousedown', (e) => this.startDrag(e));
+        const startDrag = (e) => this.startDrag(e);
+        [this.stringSvg, this.stringHandle].forEach(el => {
+            el.addEventListener('mousedown', startDrag);
+            el.addEventListener('touchstart', startDrag, { passive: false });
+            el.addEventListener('contextmenu', (e) => e.preventDefault());
         });
 
         document.addEventListener('mousemove', (e) => this.onDrag(e));
-        document.addEventListener('mouseup', (e) => this.endDrag(e));
-
-        // Touch events for both SVG string and handle
-        [stringSvg, stringHandle].forEach(element => {
-            element.addEventListener('touchstart', (e) => this.startDrag(e), { passive: false });
-        });
-
+        document.addEventListener('mouseup',   (e) => this.endDrag(e));
         document.addEventListener('touchmove', (e) => this.onDrag(e), { passive: false });
-        document.addEventListener('touchend', (e) => this.endDrag(e));
-
-        // Prevent context menu on string elements
-        [stringSvg, stringHandle].forEach(element => {
-            element.addEventListener('contextmenu', (e) => e.preventDefault());
-        });
+        document.addEventListener('touchend',  (e) => this.endDrag(e));
     }
 
     startDrag(e) {
         e.preventDefault();
         this.isDragging = true;
-        this.isRecoiling = false;
+        this.toggleTriggered = false;
 
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-
-        this.dragStartY = clientY;
-        this.dragStartX = clientX;
-        this.velocity = { x: 0, y: 0 };
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const pos = this._clientToSvg(clientX, clientY);
+        this.dragSvgX = pos.x;
+        this.dragSvgY = pos.y;
 
         this.stringSvg.style.cursor = 'grabbing';
         this.stringHandle.classList.add('dragging');
-
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'grabbing';
     }
 
     onDrag(e) {
         if (!this.isDragging) return;
-
         e.preventDefault();
 
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const pos = this._clientToSvg(clientX, clientY);
 
-        const deltaY = clientY - this.dragStartY;
-        const deltaX = clientX - this.dragStartX;
-
-        // Calculate realistic pull and sway
-        this.currentPull = Math.max(0, Math.min(deltaY, this.maxPull));
-        this.currentSway = Math.max(-this.maxSway, Math.min(deltaX * 0.8, this.maxSway));
-
-        // Update velocity for momentum
-        this.velocity.y = deltaY * 0.08;
-        this.velocity.x = deltaX * 0.08;
-
-        this.updateStringCurve();
-        this.updateHandlePosition();
-
-        // Visual feedback - update SVG handle size based on pull intensity
-        if (this.currentPull > this.pullThreshold * 0.6) {
-            const intensity = Math.min(this.currentPull / this.maxPull, 1);
-            // Scale the handle slightly based on pull intensity
-            const baseScale = 1 + (this.currentPull / this.maxPull) * 0.1;
-            const intensityScale = 1 + intensity * 0.05;
-
-            // Update the transform to include intensity scaling
-            const lastPoint = this.stringPoints[this.stringPoints.length - 1];
-            const rotation = this.currentSway * 0.1;
-            const totalScale = baseScale * intensityScale;
-
-            this.stringHandle.setAttribute('transform',
-                `rotate(${rotation} ${lastPoint.x} ${lastPoint.y}) scale(${totalScale} ${totalScale})`
-            );
-        }
-    }
-
-    updateStringCurve() {
-        // Reset points to original positions
-        this.stringPoints = [
-            { x: 60, y: 0, vx: 0, vy: 0 },   // Top (fixed)
-            { x: 60, y: 20, vx: 0, vy: 0 },
-            { x: 60, y: 40, vx: 0, vy: 0 },
-            { x: 60, y: 60, vx: 0, vy: 0 },
-            { x: 60, y: 80, vx: 0, vy: 0 }   // Bottom
-        ];
-
-        // Apply forces to create spaghetti-like curves
-        const forceStrength = this.currentPull / this.maxPull;
-
-        // Each point gets influenced by the drag with increasing effect down the string
-        for (let i = 1; i < this.stringPoints.length; i++) {
-            const influence = Math.pow(i / (this.stringPoints.length - 1), 1.5);
-
-            // Vertical displacement (pull down)
-            this.stringPoints[i].y += this.currentPull * influence * 0.4;
-
-            // Horizontal displacement (sway) with natural curve
-            const swayOffset = this.currentSway * influence * 0.6;
-            const curveOffset = Math.sin(i * 0.8) * swayOffset * 0.3; // Natural curve
-            this.stringPoints[i].x += swayOffset + curveOffset;
-
-            // Add some natural droop between points
-            if (i > 1) {
-                const droopAmount = forceStrength * 15 * Math.sin(i * 0.5);
-                this.stringPoints[i].y += droopAmount;
-            }
-        }
-
-        // Create smooth curved path using quadratic Bezier curves
-        let pathData = `M ${this.stringPoints[0].x} ${this.stringPoints[0].y}`;
-
-        for (let i = 1; i < this.stringPoints.length - 1; i++) {
-            const cp1x = this.stringPoints[i].x;
-            const cp1y = this.stringPoints[i].y;
-            const cp2x = this.stringPoints[i + 1].x;
-            const cp2y = this.stringPoints[i + 1].y;
-
-            pathData += ` Q ${cp1x} ${cp1y} ${cp2x} ${cp2y}`;
-        }
-
-        // Update both the main path and highlight
-        this.stringPath.setAttribute('d', pathData);
-        this.stringHighlight.setAttribute('d', pathData);
-    }
-
-    updateHandlePosition() {
-        // Position SVG handle at the end of the string curve
-        const lastPoint = this.stringPoints[this.stringPoints.length - 1];
-
-        // Since handle is now an SVG element, we can directly set its position
-        // in SVG coordinate space
-        this.stringHandle.setAttribute('cx', lastPoint.x);
-        this.stringHandle.setAttribute('cy', lastPoint.y);
-
-        // Apply rotation and scaling effects
-        const rotation = this.currentSway * 0.1;
-        const scale = 1 + (this.currentPull / this.maxPull) * 0.1;
-
-        // Apply transform for rotation and scaling around the handle center
-        this.stringHandle.setAttribute('transform',
-            `rotate(${rotation} ${lastPoint.x} ${lastPoint.y}) scale(${scale} ${scale})`
-        );
+        // Constrain X so the string stays mostly centred
+        this.dragSvgX = Math.max(10, Math.min(110, pos.x));
+        // Allow free downward pull; block pulling above the anchor
+        this.dragSvgY = Math.max(5, pos.y);
     }
 
     endDrag(e) {
         if (!this.isDragging) return;
-
         this.isDragging = false;
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
 
+        // If released past threshold but _onPullTriggered hasn't fired yet, trigger now
+        if (!this.toggleTriggered) {
+            const restY = (this.NUM_NODES - 1) * this.SEGMENT_LENGTH;
+            const last  = this.nodes[this.nodes.length - 1];
+            if (last.y - restY >= this.pullThreshold) {
+                this.toggleTriggered = true;
+                this._onPullTriggered();
+                return; // _onPullTriggered already cleans up cursors
+            }
+        }
+
+        // Natural release — Verlet physics handles the recoil automatically
         this.stringSvg.style.cursor = 'grab';
         this.stringHandle.classList.remove('dragging');
-
-        // Check if pulled enough to trigger lamp toggle
-        if (this.currentPull >= this.pullThreshold) {
-            this.triggerPullAnimation();
-        } else {
-            // Start realistic spaghetti-like recoil
-            this.startSpaghettiRecoil();
-        }
-    }
-
-    startSpaghettiRecoil() {
-        this.isRecoiling = true;
-        this.animateSpaghettiRecoil();
-    }
-
-    animateSpaghettiRecoil() {
-        if (!this.isRecoiling) return;
-
-        // Apply spring forces to each point independently
-        for (let i = 1; i < this.stringPoints.length; i++) {
-            const targetX = 60;
-            const targetY = i * 20;
-
-            // Calculate spring forces
-            const forceX = (targetX - this.stringPoints[i].x) * this.springForce;
-            const forceY = (targetY - this.stringPoints[i].y) * this.springForce;
-
-            // Update velocity
-            this.stringPoints[i].vx += forceX;
-            this.stringPoints[i].vy += forceY;
-
-            // Apply damping
-            this.stringPoints[i].vx *= this.damping;
-            this.stringPoints[i].vy *= this.damping;
-
-            // Update position
-            this.stringPoints[i].x += this.stringPoints[i].vx;
-            this.stringPoints[i].y += this.stringPoints[i].vy;
-        }
-
-        // Apply overall pull and sway forces
-        const pullForce = -this.currentPull * this.springForce * 0.5;
-        const swayForce = -this.currentSway * this.springForce * 0.5;
-
-        this.velocity.y += pullForce;
-        this.velocity.x += swayForce;
-        this.velocity.y *= this.damping;
-        this.velocity.x *= this.damping;
-
-        this.currentPull += this.velocity.y;
-        this.currentSway += this.velocity.x;
-
-        // Constrain bounds
-        this.currentPull = Math.max(-30, Math.min(this.maxPull, this.currentPull));
-        this.currentSway = Math.max(-this.maxSway, Math.min(this.maxSway, this.currentSway));
-
-        // Update visual
-        this.updateStringCurve();
-        this.updateHandlePosition();
-
-        // Continue if there's still movement
-        const totalMovement = Math.abs(this.velocity.y) + Math.abs(this.velocity.x) +
-                            Math.abs(this.currentPull) + Math.abs(this.currentSway);
-
-        if (totalMovement > 2) {
-            requestAnimationFrame(() => this.animateSpaghettiRecoil());
-        } else {
-            this.finishSpaghettiRecoil();
-        }
-    }
-
-    finishSpaghettiRecoil() {
-        this.isRecoiling = false;
-        this.velocity = { x: 0, y: 0 };
-
-        // Smooth snap back to original position
-        if (typeof anime !== 'undefined') {
-            anime({
-                targets: { pull: this.currentPull, sway: this.currentSway },
-                pull: 0,
-                sway: 0,
-                duration: 500,
-                easing: 'easeOutElastic(1, 0.8)',
-                update: (anim) => {
-                    this.currentPull = anim.animations[0].currentValue;
-                    this.currentSway = anim.animations[1].currentValue;
-                    this.updateStringCurve();
-                    this.updateHandlePosition();
-                },
-                complete: () => {
-                    this.resetStringPosition();
-                }
-            });
-        } else {
-            this.resetStringPosition();
-        }
-    }
-
-    triggerPullAnimation() {
-        this.isRecoiling = false;
-
-        // Dramatic pull with spaghetti overshoot
-        if (typeof anime !== 'undefined') {
-            anime({
-                targets: { pull: this.currentPull, sway: this.currentSway },
-                pull: this.currentPull + 25,
-                sway: this.currentSway * 1.3,
-                duration: 120,
-                easing: 'easeOutQuad',
-                update: (anim) => {
-                    this.currentPull = anim.animations[0].currentValue;
-                    this.currentSway = anim.animations[1].currentValue;
-                    this.updateStringCurve();
-                    this.updateHandlePosition();
-                },
-                complete: () => {
-                    // Spaghetti-like recoil with multiple bounces
-                    anime({
-                        targets: { pull: this.currentPull + 25, sway: this.currentSway * 1.3 },
-                        pull: [this.currentPull + 25, -20, 15, -8, 3, 0],
-                        sway: [this.currentSway * 1.3, this.currentSway * -0.4, this.currentSway * 0.2, this.currentSway * -0.1, 0],
-                        duration: 1000,
-                        easing: 'easeOutElastic(1, 0.6)',
-                        update: (anim) => {
-                            this.currentPull = anim.animations[0].currentValue;
-                            this.currentSway = anim.animations[1].currentValue;
-                            this.updateStringCurve();
-                            this.updateHandlePosition();
-                        },
-                        complete: () => {
-                            this.resetStringPosition();
-                        }
-                    });
-                }
-            });
-        } else {
-            setTimeout(() => this.resetStringPosition(), 800);
-        }
-
-        // Toggle lamp
-        setTimeout(() => {
-            this.toggleLampState();
-        }, 80);
-    }
-
-    resetStringPosition() {
-        // Reset SVG path to original straight line
-        const originalPath = 'M 60 0 Q 60 20 60 40 Q 60 60 60 80';
-        this.stringPath.setAttribute('d', originalPath);
-        this.stringHighlight.setAttribute('d', originalPath);
-
-        // Reset handle position to original position in SVG coordinates
-        this.stringHandle.setAttribute('cx', '60');
-        this.stringHandle.setAttribute('cy', '80');
-        this.stringHandle.removeAttribute('transform');
-
-        // Reset physics state
-        this.currentPull = 0;
-        this.currentSway = 0;
-        this.velocity = { x: 0, y: 0 };
-        this.isRecoiling = false;
-
-        // Reset string points
-        this.stringPoints = [
-            { x: 60, y: 0, vx: 0, vy: 0 },
-            { x: 60, y: 20, vx: 0, vy: 0 },
-            { x: 60, y: 40, vx: 0, vy: 0 },
-            { x: 60, y: 60, vx: 0, vy: 0 },
-            { x: 60, y: 80, vx: 0, vy: 0 }
-        ];
-    }
-
-    toggleLampState() {
-        console.log('Toggling lamp state...');
-        // Call the API to toggle the lamp
-        this.callToggleAPI();
-    }
-
-    async callToggleAPI() {
-        console.log('Calling toggle API...');
-        try {
-            const response = await fetch('/api/v1/lamp/toggle', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('API response:', data);
-                // Update the lamp state based on API response
-                this.updateLampFromAPI(data);
-            } else {
-                console.error('API call failed with status:', response.status);
-                // Fallback to local toggle if API fails
-                this.toggleLampLocal();
-            }
-        } catch (error) {
-            console.error('Error calling toggle API:', error);
-            // Fallback to local toggle if API fails
-            this.toggleLampLocal();
-        }
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
     }
 
     updateLampFromAPI(data) {
@@ -552,8 +402,6 @@ class LampApp {
             this.triggerLightParticles();
         }
     }
-
-    // This method is now replaced by the enhanced async version below
 
     animateLampSwing() {
         // Create a gentle swinging motion
