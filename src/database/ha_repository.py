@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, date
 from typing import Optional, List
 from services import get_cache_service, get_sync_service
+from .database import db_config
 from .models import LampActivity, LampStatistics, CurrentLampState
 from .models import LampActivityResponse, LampStatisticsResponse, CurrentLampStateResponse, LampDashboardResponse
 
@@ -20,9 +21,19 @@ class HALampRepository:
         self.cache_service = get_cache_service()
         self.sync_service = get_sync_service()
         self._db_repository = None
+        self._cache_only_logged = False
     
     def _get_db_repository(self):
         """Get database repository if available, None otherwise"""
+        if not db_config.has_database_configuration():
+            self._db_repository = None
+            if not self._cache_only_logged:
+                logger.info("Database configuration not detected. Running in cache-only mode.")
+                self._cache_only_logged = True
+            return None
+
+        self._cache_only_logged = False
+
         if self._db_repository is None:
             try:
                 from .repository import LampRepository

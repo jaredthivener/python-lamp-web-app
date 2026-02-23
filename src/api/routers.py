@@ -38,7 +38,7 @@ def get_client_info(request: Request) -> tuple:
     return session_id, user_agent, ip_address
 
 @router.get("/lamp/status", response_model=LampStatusResponse)
-async def get_lamp_status():
+async def get_lamp_status() -> LampStatusResponse:
     """Get the current lamp status from HA repository."""
     try:
         repo = HALampRepository()
@@ -53,7 +53,7 @@ async def get_lamp_status():
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/lamp/toggle", response_model=LampActionResponse)
-async def toggle_lamp(request: Request):
+async def toggle_lamp(request: Request) -> LampActionResponse:
     """Toggle the lamp state using HA repository."""
     try:
         repo = HALampRepository()
@@ -80,7 +80,7 @@ async def toggle_lamp(request: Request):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/lamp/dashboard", response_model=LampDashboardResponse)
-async def get_lamp_dashboard():
+async def get_lamp_dashboard() -> LampDashboardResponse:
     """Get comprehensive lamp dashboard data using HA repository."""
     try:
         repo = HALampRepository()
@@ -91,7 +91,7 @@ async def get_lamp_dashboard():
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/lamp/activities", response_model=List[LampActivityResponse])
-async def get_recent_activities(limit: int = 10):
+async def get_recent_activities(limit: int = 10) -> List[LampActivityResponse]:
     """Get recent lamp activities using HA repository."""
     try:
         if limit > 100:  # Prevent excessive data retrieval
@@ -114,7 +114,7 @@ async def get_recent_activities(limit: int = 10):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/lamp/statistics/today", response_model=Optional[LampStatisticsResponse])
-async def get_today_statistics():
+async def get_today_statistics() -> Optional[LampStatisticsResponse]:
     """Get today's lamp usage statistics using HA repository."""
     try:
         repo = HALampRepository()
@@ -136,8 +136,8 @@ async def get_today_statistics():
         logger.error(f"Error getting today's statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/lamp/sync-status")
-async def get_sync_status():
+@router.get("/lamp/sync-status", response_model=dict)
+async def get_sync_status() -> dict:
     """Get current sync status between cache and database."""
     try:
         repo = HALampRepository()

@@ -14,6 +14,7 @@ from api import router as lamp_router
 # Import high-availability services
 from services import start_sync_service, stop_sync_service
 from database.ha_repository import HALampRepository
+from database.models import LampDashboardResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -87,7 +88,7 @@ templates = Jinja2Templates(directory=os.path.join(current_dir, "templates"))
 app.include_router(lamp_router)
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
+async def read_root(request: Request) -> HTMLResponse:
     """Render the main lamp interface."""
     try:
         return templates.TemplateResponse("index.html", {"request": request})
@@ -95,8 +96,8 @@ async def read_root(request: Request):
         logger.error(f"Error rendering template: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/health")
-async def health_check():
+@app.get("/health", response_model=dict)
+async def health_check() -> dict:
     """Comprehensive health check endpoint with high-availability status."""
     health_status = {
         "status": "healthy",
@@ -136,8 +137,8 @@ async def health_check():
         # Return 200 for degraded state (app still works)
         return health_status
 
-@app.get("/dashboard")
-async def dashboard():
+@app.get("/dashboard", response_model=LampDashboardResponse)
+async def dashboard() -> LampDashboardResponse:
     """Get comprehensive lamp dashboard data."""
     try:
         repo = HALampRepository()

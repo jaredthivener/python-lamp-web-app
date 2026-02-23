@@ -102,6 +102,11 @@ echo "💡 For local development:"
 echo "   • Create .env file with SQL_CONNECTION_STRING for database"
 echo "   • Or set environment variables for Azure Key Vault integration"
 echo "   • Database tables will be created automatically on first run"
+if [ -z "$POSTGRES_CONNECTION_STRING" ] && [ -z "$KEY_VAULT_URI" ]; then
+    echo ""
+    echo "ℹ️  No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI detected."
+    echo "   Starting in cache-only mode for local development."
+fi
 echo ""
 echo "💡 Press Ctrl+C to stop the server"
 echo "=============================="

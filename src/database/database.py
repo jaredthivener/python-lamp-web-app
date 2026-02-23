@@ -20,6 +20,10 @@ class DatabaseConfig:
     def __init__(self):
         self._connection_string = None
 
+    def has_database_configuration(self) -> bool:
+        """Return True when any supported database configuration is present."""
+        return bool(os.getenv("POSTGRES_CONNECTION_STRING") or os.getenv("KEY_VAULT_URI"))
+
     def _get_connection_string(self) -> str:
         """
         Retrieve PostgreSQL connection string from environment variable or Azure Key Vault
@@ -230,6 +234,13 @@ def get_db():
 
 def init_database():
     """Initialize database tables and verify connection"""
+    if not db_config.has_database_configuration():
+        logger.info(
+            "No database configuration detected (POSTGRES_CONNECTION_STRING or KEY_VAULT_URI). "
+            "Starting in cache-only mode."
+        )
+        return False
+
     max_retries = 3
     retry_delay = 5
 

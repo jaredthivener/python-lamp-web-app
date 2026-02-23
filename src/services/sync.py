@@ -114,6 +114,10 @@ class DatabaseSyncService:
     def _get_database_repository(self):
         """Get database repository instance, return None if unavailable"""
         try:
+            from database.database import db_config
+            if not db_config.has_database_configuration():
+                return None
+
             from database.repository import LampRepository
             repo = LampRepository()
 
