@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   label-risk:
-    if: github.actor == 'dependabot[bot]'
+    if: contains(fromJSON('["dependabot[bot]", "app/dependabot"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     permissions:
       contents: read
