@@ -10,7 +10,7 @@ psycopg2-binary==2.9.11
 
 # Azure SDK for Key Vault
 azure-identity==1.25.3
-azure-keyvault-secrets==4.10.0
+azure-keyvault-secrets==4.11.0
 
 # Azure monitoring
 opencensus-ext-azure==1.1.15
