@@ -51,6 +51,9 @@ param managedIdentityClientId string
 @description('The PostgreSQL connection string secret name in Key Vault')
 param postgresConnectionStringSecretName string
 
+@description('The container image tag to deploy. Avoid using "latest" outside dev; prefer immutable tags such as the git SHA.')
+param imageTag string = 'latest'
+
 // =============================================================================
 // App Service Plan (Linux)
 // =============================================================================
@@ -93,7 +96,7 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
     clientAffinityEnabled: false
     scmSiteAlsoStopped: false
     siteConfig: {
-      linuxFxVersion: 'DOCKER|${containerRegistryLoginServer}/lamp-app:latest'
+      linuxFxVersion: 'DOCKER|${containerRegistryLoginServer}/lamp-app:${imageTag}'
       acrUseManagedIdentityCreds: true
       acrUserManagedIdentityID: managedIdentityClientId
       keyVaultReferenceIdentity: managedIdentityId
@@ -187,11 +190,21 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
 // =============================================================================
 // App Service Basic Publishing Credentials Configuration
 // =============================================================================
-resource appServiceBasicPublishingCredentialsPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-11-01' = {
+// Disable basic-auth publishing for both SCM and FTP endpoints; deployments
+// should use the user-assigned managed identity instead.
+resource appServiceScmBasicPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-11-01' = {
   parent: appService
   name: 'scm'
   properties: {
-    allow: true
+    allow: false
+  }
+}
+
+resource appServiceFtpBasicPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-11-01' = {
+  parent: appService
+  name: 'ftp'
+  properties: {
+    allow: false
   }
 }
 

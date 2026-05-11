@@ -98,7 +98,11 @@ resource acrPushRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// Grant the managed identity Contributor role on the registry for full management
+// Grant the managed identity Contributor role on the registry ONLY.
+// Required because `az acr build` (used by the deployment script below) calls
+// the management-plane action `Microsoft.ContainerRegistry/registries/scheduleRun/action`,
+// which is not included in AcrPush. Scope is intentionally limited to this single
+// registry resource (NOT the resource group or subscription).
 resource acrContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, managedIdentityPrincipalId, 'Contributor')
   scope: containerRegistry

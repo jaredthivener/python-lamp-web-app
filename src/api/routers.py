@@ -50,7 +50,7 @@ async def get_lamp_status() -> LampStatusResponse:
         )
     except Exception as e:
         logger.error(f"Error getting lamp status: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/lamp/toggle", response_model=LampActionResponse)
 async def toggle_lamp(request: Request) -> LampActionResponse:
@@ -77,7 +77,7 @@ async def toggle_lamp(request: Request) -> LampActionResponse:
         )
     except Exception as e:
         logger.error(f"Error toggling lamp: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/lamp/dashboard", response_model=LampDashboardResponse)
 async def get_lamp_dashboard() -> LampDashboardResponse:
@@ -88,7 +88,7 @@ async def get_lamp_dashboard() -> LampDashboardResponse:
         return dashboard_data
     except Exception as e:
         logger.error(f"Error getting dashboard data: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/lamp/activities", response_model=List[LampActivityResponse])
 async def get_recent_activities(limit: int = 10) -> List[LampActivityResponse]:
@@ -111,7 +111,7 @@ async def get_recent_activities(limit: int = 10) -> List[LampActivityResponse]:
         ]
     except Exception as e:
         logger.error(f"Error getting recent activities: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/lamp/statistics/today", response_model=Optional[LampStatisticsResponse])
 async def get_today_statistics() -> Optional[LampStatisticsResponse]:
@@ -134,7 +134,7 @@ async def get_today_statistics() -> Optional[LampStatisticsResponse]:
         )
     except Exception as e:
         logger.error(f"Error getting today's statistics: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/lamp/sync-status", response_model=dict)
 async def get_sync_status() -> dict:
@@ -145,4 +145,4 @@ async def get_sync_status() -> dict:
         return sync_status
     except Exception as e:
         logger.error(f"Error getting sync status: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

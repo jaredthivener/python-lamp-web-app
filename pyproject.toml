@@ -37,9 +37,9 @@ dependencies = [
     "python-dotenv==1.2.2",
 ]
 
-# Modern dependency group for dev
-[project.dependency-groups.dev]
-dependencies = [
+# PEP 735 dependency groups (top-level, not under [project])
+[dependency-groups]
+dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
@@ -51,9 +51,6 @@ dependencies = [
 Homepage = "https://github.com/jaredthivener/python-lamp-web-app"
 Repository = "https://github.com/jaredthivener/python-lamp-web-app"
 Issues = "https://github.com/jaredthivener/python-lamp-web-app/issues"
-
-[project.scripts]
-lamp-app = "src.main:main"
 
 # Hatchling build configuration
 [tool.hatch.build.targets.wheel]

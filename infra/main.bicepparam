@@ -19,6 +19,11 @@ param appPort = '8000'
 // Container Registry Configuration
 param containerRegistrySku = 'Basic' // Basic tier is sufficient for development
 
+// PostgreSQL admin password.
+// Pull from an env var (set AZURE_POSTGRES_ADMIN_PASSWORD before `azd up` /
+// `az deployment sub create`). Do not hard-code secrets in this file.
+param postgresAdminPassword = readEnvironmentVariable('AZURE_POSTGRES_ADMIN_PASSWORD')
+
 // Production environment settings (uncomment for production)
 // param environmentName = 'prod'
 // param appServicePlanSku = 'P1v3'

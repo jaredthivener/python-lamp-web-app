@@ -55,9 +55,20 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-12-01-preview' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
+    // NOTE: App Service outbound traffic is NOT part of the 'AzureServices'
+    // bypass (that bypass only covers a narrow set of Microsoft control-plane
+    // services). With no VNet integration or private endpoint in this
+    // topology, setting defaultAction:'Deny' blocks the App Service managed
+    // identity from reading secrets (ForbiddenByFirewall). Access is still
+    // gated by Entra ID + RBAC (Key Vault Secrets User role assignment below).
+    // To harden further, add VNet integration on the App Service plan plus a
+    // Key Vault private endpoint, then flip defaultAction to 'Deny' and
+    // publicNetworkAccess to 'Disabled'.
     networkAcls: {
       defaultAction: 'Allow'
       bypass: 'AzureServices'
+      ipRules: []
+      virtualNetworkRules: []
     }
     publicNetworkAccess: 'Enabled'
   }

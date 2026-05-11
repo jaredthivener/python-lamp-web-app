@@ -30,9 +30,6 @@ param administratorLoginPassword string
 @description('The Key Vault name where secrets will be stored')
 param keyVaultName string
 
-@description('Environment name for resource naming')
-param environmentName string
-
 @description('The resource ID of the Log Analytics workspace for diagnostic settings')
 param logAnalyticsWorkspaceId string
 
@@ -94,16 +91,6 @@ resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallR
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '0.0.0.0'
-  }
-}
-
-// Allow all IPs for development (you may want to restrict this in production)
-resource allowAllIPs 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (environmentName == 'dev') {
-  parent: postgresServer
-  name: 'AllowAllIPs'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '255.255.255.255'
   }
 }
 

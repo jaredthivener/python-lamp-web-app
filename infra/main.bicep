@@ -54,6 +54,11 @@ param imageTag string = 'latest'
 @description('The path to the Dockerfile relative to the repository root')
 param dockerfilePath string = 'Dockerfile'
 
+@description('Administrator password for the PostgreSQL flexible server. Required; provide via parameter file or azd secure prompt.')
+@secure()
+@minLength(16)
+param postgresAdminPassword string
+
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var resourcePrefix = 'lamp'
@@ -69,9 +74,6 @@ var keyVaultName = '${resourcePrefix}-kv-${resourceToken}'
 var postgresServerName = '${resourcePrefix}-postgres-${resourceToken}'
 var postgresDatabaseName = '${resourcePrefix}_db_${resourceToken}'
 var dashboardName = '${resourcePrefix}-dashboard-${resourceToken}'
-
-// Generate secure password for PostgreSQL Server
-var postgresAdminPassword = '${toUpper(uniqueString(subscription().id, resourceGroupName))}-${toLower(uniqueString(subscription().id, environmentName))}-Pg1!'
 
 // Tags for resource management
 var commonTags = {
@@ -147,7 +149,6 @@ module postgresDatabase 'modules/database/postgresql.bicep' = {
     administratorLogin: 'postgres'
     administratorLoginPassword: postgresAdminPassword
     keyVaultName: keyVault.outputs.keyVaultName
-    environmentName: environmentName
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
@@ -197,6 +198,7 @@ module appService 'modules/compute/appservice.bicep' = {
     managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
     managedIdentityClientId: managedIdentity.outputs.managedIdentityClientId
     postgresConnectionStringSecretName: postgresDatabase.outputs.connectionStringSecretName
+    imageTag: imageTag
   }
 }
 
