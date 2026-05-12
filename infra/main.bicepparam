@@ -22,7 +22,10 @@ param containerRegistrySku = 'Basic' // Basic tier is sufficient for development
 // PostgreSQL admin password.
 // Pull from an env var (set AZURE_POSTGRES_ADMIN_PASSWORD before `azd up` /
 // `az deployment sub create`). Do not hard-code secrets in this file.
-param postgresAdminPassword = readEnvironmentVariable('AZURE_POSTGRES_ADMIN_PASSWORD')
+// The empty default allows `azd down` / `az bicep build` to compile without
+// the variable present; the @minLength(16) constraint on the param will
+// catch an empty value if an actual deployment is attempted without it set.
+param postgresAdminPassword = readEnvironmentVariable('AZURE_POSTGRES_ADMIN_PASSWORD', '')
 
 // Production environment settings (uncomment for production)
 // param environmentName = 'prod'

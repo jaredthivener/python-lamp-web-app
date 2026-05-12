@@ -54,9 +54,8 @@ param imageTag string = 'latest'
 @description('The path to the Dockerfile relative to the repository root')
 param dockerfilePath string = 'Dockerfile'
 
-@description('Administrator password for the PostgreSQL flexible server. Required; provide via parameter file or azd secure prompt.')
+@description('Administrator password for the PostgreSQL flexible server. Required; provide via parameter file or azd secure prompt. Must be at least 16 characters with mixed case, digits, and special characters (enforced by PostgreSQL at deploy time).')
 @secure()
-@minLength(16)
 param postgresAdminPassword string
 
 // Generate unique resource names using resource token
