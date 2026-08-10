@@ -1,14 +1,6 @@
 name: Deploy Azure Infrastructure
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "infra/**"
-      - "azure.yaml"
-      - ".github/workflows/infra-deploy.yml"
-
   workflow_dispatch:
     inputs:
       environment:
