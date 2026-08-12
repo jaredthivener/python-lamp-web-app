@@ -2,7 +2,7 @@
 Repository pattern for database operations using psycopg2
 """
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import Optional, List
 import psycopg2
 from .models import LampActivity, LampStatistics, CurrentLampState
