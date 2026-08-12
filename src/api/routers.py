@@ -12,7 +12,6 @@ from database.ha_repository import HALampRepository
 from database.models import (
     LampActivityResponse,
     LampStatisticsResponse,
-    CurrentLampStateResponse,
     LampDashboardResponse
 )
 
