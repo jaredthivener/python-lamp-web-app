@@ -2,7 +2,6 @@
 High-availability caching service for lamp state management.
 Provides fallback when Azure PostgreSQL is unavailable and maintains state consistency.
 """
-import json
 import logging
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any
