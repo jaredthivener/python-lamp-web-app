@@ -5,7 +5,7 @@ Provides fallback when Azure PostgreSQL is unavailable and maintains state consi
 import logging
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import threading
 
 logger = logging.getLogger(__name__)
