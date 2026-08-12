@@ -6,7 +6,7 @@ import logging
 import re
 import psycopg2
 import psycopg2.extras
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 from contextlib import contextmanager
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
