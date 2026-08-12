@@ -2,7 +2,6 @@
 Synchronization service for maintaining consistency between cache and Azure PostgreSQL.
 Handles bidirectional sync and automatic reconnection.
 """
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
