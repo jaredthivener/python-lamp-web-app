@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime, date
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import threading
 import time
 
