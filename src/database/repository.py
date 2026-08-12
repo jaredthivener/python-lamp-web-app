@@ -4,7 +4,6 @@ Repository pattern for database operations using psycopg2
 import logging
 from datetime import datetime, date, timedelta
 from typing import Optional, List
-import psycopg2
 from .models import LampActivity, LampStatistics, CurrentLampState
 from .models import LampActivityResponse, LampStatisticsResponse, CurrentLampStateResponse, LampDashboardResponse
 from .database import db_config
