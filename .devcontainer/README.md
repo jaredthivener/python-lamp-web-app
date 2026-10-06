@@ -54,7 +54,7 @@ This project includes a complete development container setup for Visual Studio C
 - **Lint with Flake8**: Checks code quality
 - **Install Dependencies with uv**: Installs project dependencies using uv
 - **Install Dev Dependencies with uv**: Installs development dependencies using uv
-- **Deploy to Azure**: Deploys to Azure using `azd up`
+- **Deploy to Azure**: Creates the Azure infrastructure using `azd provision`
 
 ## Package Management with uv
 
@@ -144,15 +144,12 @@ When ready to work with Azure resources:
    azd auth login
    ```
 
-2. **Set environment variables** for Azure:
-
-   - `KEY_VAULT_URI=https://your-keyvault.vault.azure.net/`
-   - `AZURE_CLIENT_ID=your-managed-identity-client-id`
-
-3. **Deploy to Azure**:
+2. **Deploy the infrastructure** (see `infra/README.md` for what it creates and costs):
    ```bash
-   azd up
+   azd provision
    ```
+
+3. **Publish the app**: run the Tests workflow from the repository's Actions tab. The cluster pulls what it publishes.
 
 ## Files Structure
 
