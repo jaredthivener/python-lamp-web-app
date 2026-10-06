@@ -17,6 +17,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: write # to start the Tests workflow, which publishes the app, once the cluster exists
 
 env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -24,6 +25,8 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
   AZURE_DEV_COLLECT_TELEMETRY: "no"
+  # Who gets kubectl access. Without this it would be the workflow's own identity.
+  AKS_ADMIN_OBJECT_ID: ${{ vars.AKS_ADMIN_OBJECT_ID }}
 
 jobs:
   deploy-infrastructure:
@@ -50,12 +53,31 @@ jobs:
           azd auth login --client-id ${{ secrets.AZURE_CLIENT_ID }} --tenant-id ${{ secrets.AZURE_TENANT_ID }} --federated-credential-provider github
 
           echo "Setting up azd environment..."
-          azd env new ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location centralus || azd env select ${{ env.AZURE_ENV_NAME }}
+          azd env new ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location westus3 || azd env select ${{ env.AZURE_ENV_NAME }}
 
+      # The cluster has to be running for its settings to be changed
+      - name: Start the cluster if the schedule has stopped it
+        run: |
+          group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
+          cluster=$(az aks list --resource-group "$group" --query "[0].name" --output tsv 2>/dev/null || true)
+          if [ -n "$cluster" ] && [ "$(az aks show --resource-group "$group" --name "$cluster" --query powerState.code --output tsv)" = "Stopped" ]; then
+            az aks start --resource-group "$group" --name "$cluster"
+          fi
+
+      # Deployments are safe to repeat, and one failure is worth repeating for: the
+      # PostgreSQL service sometimes reports that the virtual network or its subnet
+      # "doesn't exist" seconds after Azure has confirmed creating them.
       - name: Deploy infrastructure
         run: |
-          azd provision --no-state
+          for attempt in 1 2 3; do
+            azd provision --no-state && exit 0
+            echo "::warning::Attempt $attempt failed. Waiting a minute before trying again."
+            sleep 60
+          done
+          exit 1
 
-    #   - name: Deploy application
-    #     run: |
-    #       azd deploy
+      # A new cluster has nothing to run until the image and manifests are in its registry
+      - name: Publish the app
+        run: gh workflow run ci.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
