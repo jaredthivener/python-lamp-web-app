@@ -107,7 +107,7 @@ Prices are West US 3, October 2026.
 **Once, in the GitHub repository settings**
 
 - Secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`: an app registration with a federated credential for this repository's `main` branch, holding Contributor and User Access Administrator on the subscription.
-- Variable `AKS_ADMIN_OBJECT_ID`: your Entra object ID (`az ad signed-in-user show --query id -o tsv`). Without it nobody is granted `kubectl` access.
+- Secret `AKS_ADMIN_OBJECT_ID`: your Entra object ID. Without it nobody is granted `kubectl` access. It is an identifier, not a credential; it is a secret so that the run logs, which are public, mask it. To set it without displaying it: `az ad signed-in-user show --query id -o tsv | gh secret set AKS_ADMIN_OBJECT_ID`
 
 **Then** run the **Deploy Azure Infrastructure** workflow. It provisions everything (about 20 minutes the first time, 10 after that) and starts the Tests workflow, whose Publish job gives the new cluster something to run. The site's address is the `lampUrl` output.
 
