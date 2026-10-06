@@ -17,7 +17,6 @@ from sqlalchemy import create_engine, select, update
 
 import main
 import store as storage
-from store import Store, lamp_activities, lamp_viewers, metadata
 
 TOGGLE = "/api/v1/lamp/toggle"
 STATUS = "/api/v1/lamp/status"
@@ -29,8 +28,8 @@ def store(tmp_path):
     engine = create_engine(
         os.getenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'lamp.db'}")
     )
-    metadata.drop_all(engine)
-    yield Store(engine)
+    storage.metadata.drop_all(engine)
+    yield storage.Store(engine)
     engine.dispose()
 
 
@@ -79,7 +78,8 @@ def test_oversized_headers_are_clipped_to_the_column(client, store):
     assert client.post(TOGGLE, headers={"X-Session-ID": "x" * 5000}).status_code == 200
     with store.engine.connect() as conn:
         assert (
-            len(conn.execute(select(lamp_activities.c.session_id)).scalar_one()) == 100
+            len(conn.execute(select(storage.lamp_activities.c.session_id)).scalar_one())
+            == 100
         )
 
 
@@ -93,7 +93,9 @@ def test_concurrent_pulls_never_lose_a_flip(store):
     with store.engine.connect() as conn:
         actions = (
             conn.execute(
-                select(lamp_activities.c.action).order_by(lamp_activities.c.id)
+                select(storage.lamp_activities.c.action).order_by(
+                    storage.lamp_activities.c.id
+                )
             )
             .scalars()
             .all()
@@ -117,11 +119,11 @@ def test_runs_on_the_tables_the_previous_version_created(tmp_path):
             INSERT INTO lamp_activities (action, session_id, previous_state) VALUES ('on', 's', 'off');
         """)
 
-    store = Store(create_engine(f"sqlite:///{path}"))
-    before = store.snapshot()
+    deployed = storage.Store(create_engine(f"sqlite:///{path}"))
+    before = deployed.snapshot()
     assert (before.is_on, before.lifetime, before.today) == (True, 1, 1)
-    assert store.toggle().is_on is False
-    store.engine.dispose()
+    assert deployed.toggle().is_on is False
+    deployed.engine.dispose()
 
 
 def test_every_open_stream_hears_a_toggle(store):
@@ -162,8 +164,8 @@ def test_replicas_agree_on_the_lamp_and_who_is_watching(store, monkeypatch):
         # That replica dies without saying goodbye: its viewers lapse.
         with store.engine.begin() as conn:
             conn.execute(
-                update(lamp_viewers)
-                .where(lamp_viewers.c.replica == "another-replica")
+                update(storage.lamp_viewers)
+                .where(storage.lamp_viewers.c.replica == "another-replica")
                 .values(seen_at=datetime.now(timezone.utc) - timedelta(minutes=1))
             )
         await main.catch_up()
@@ -213,7 +215,7 @@ def test_a_lost_database_degrades_instead_of_crashing(client, monkeypatch):
     assert client.get(STATUS).status_code == 200  # the lamp has been seen once
 
     monkeypatch.setattr(
-        main, "store", Store(create_engine("sqlite:////nonexistent/lamp.db"))
+        main, "store", storage.Store(create_engine("sqlite:////nonexistent/lamp.db"))
     )
     assert client.get("/health").json()["status"] == "degraded"
     assert client.get("/livez").status_code == 200  # a probe must not get it restarted
