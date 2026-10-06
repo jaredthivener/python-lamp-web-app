@@ -39,6 +39,27 @@ jobs:
       - name: Run lamp physics tests
         run: npm test
 
+      # The manifests Flux applies, checked before they merge instead of on the cluster:
+      # every field against its schema, with the ${PLACEHOLDERS} filled in the way Flux
+      # fills them. A placeholder missing from this list fails here; one missing from
+      # manifestValues in infra/main.bicep fails on the cluster.
+      - name: Install the Flux CLI
+        uses: fluxcd/flux2/action@v2.9.6
+        with:
+          plugins: schema@0.15.0
+
+      - name: Validate the Kubernetes manifests
+        run: |
+          cat > "$RUNNER_TEMP/values.env" <<'EOF'
+          LAMP_HOST=lamp.example.com
+          PUBLIC_IP_NAME=lamp-ip
+          PUBLIC_IP_RESOURCE_GROUP=rg-lamp
+          APP_IDENTITY_CLIENT_ID=00000000-0000-0000-0000-000000000000
+          POSTGRES_CONNECTION_STRING=host=db.example.com dbname=lamp user=lamp-app sslmode=require
+          EOF
+          flux schema validate k8s --schema-location default --schema-location ecosystem \
+            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict
+
       # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite
         run: uv run pytest
@@ -118,5 +139,11 @@ jobs:
 
           flux push artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --path k8s \
             --source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --revision "main@sha1:$GITHUB_SHA"
-          # "latest" is the tag the cluster follows
-          flux tag artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --tag latest
+          # "latest" is the tag the cluster follows. It only ever moves to the newest
+          # commit on main, so a run that finishes late, or is run again, cannot put
+          # older code back.
+          if [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" ]; then
+            flux tag artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --tag latest
+          else
+            echo "::notice::main has moved on: $GITHUB_SHA was published, and latest was left alone."
+          fi
