@@ -56,12 +56,31 @@ graph LR
 
 ## 🔄 How a change reaches the cluster
 
-1. A pull request merges to `main`. The **Tests** job runs.
-2. The **Publish** job builds the Arm64 image and pushes it to the registry, tagged with the commit.
-3. The same job pushes the `k8s/` folder as an OCI artifact, with that image tag written in, and moves the `latest` tag to it.
+1. A pull request is opened. The **Tests** job runs, and with it Flux's validator over `k8s/`: every manifest is checked against its schema, with the `${PLACEHOLDERS}` filled in.
+2. It merges to `main`. The **Publish** job builds the Arm64 image and pushes it to the registry, tagged with the commit.
+3. The same job pushes the `k8s/` folder as an OCI artifact, with that image tag written in. If the commit is still the newest on `main`, the `latest` tag moves to it.
 4. Flux, inside the cluster, sees the new artifact within a minute and applies it. `k8s/infrastructure` (the gateway controller and cert-manager) goes first, then `k8s/app` (the public gateway and the application).
 
-Nothing outside the cluster ever holds credentials for it. Values that differ per deployment (host name, identity, database address) are handed to Flux by Bicep as `manifestValues` and replace the `${PLACEHOLDERS}` in `k8s/app`.
+Nothing outside the cluster ever holds credentials for it. Values that differ per deployment (host name, identity, database address) are handed to Flux by Bicep as `manifestValues` and replace the `${PLACEHOLDERS}` in `k8s/app`. A placeholder that gets no value stops the rollout.
+
+To undo a change, revert it on `main`. The revert is published like any other commit.
+
+### Where the truth is
+
+The cluster reads the registry, and only CI on `main` writes to it. Flux calls this [Gitless GitOps](https://fluxcd.io/flux/concepts/#gitless-gitops): changes are made in Git, and the registry is what the cluster follows.
+
+| What | Decided by | How to see what is running |
+| --- | --- | --- |
+| The manifests and the app image | The newest commit on `main` | The command below. The bundle records its commit, and the image tag is that commit |
+| Envoy Gateway and cert-manager versions | The newest 1.x release of each chart. Git holds the range, not the version | `kubectl get helmreleases -n flux-system` |
+| Host name, identities, database address | `manifestValues` in `infra/main.bicep`, as of the last run of the Deploy workflow | The cluster's GitOps page in the Azure portal |
+| The version of Flux | The AKS extension, which upgrades itself | The cluster's Extensions + applications page in the Azure portal |
+
+```bash
+kubectl get ocirepositories -n flux-system -o custom-columns='NAME:.metadata.name,BUILT_FROM:.status.artifact.metadata.org\.opencontainers\.image\.revision'
+```
+
+A change made with `kubectl` does not last. Flux puts back what the bundle says: within ten minutes for the manifests, within thirty for the two Helm releases.
 
 ## 💰 What it costs
 
@@ -167,6 +186,33 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | Least privilege for the database | The app is the server's Entra administrator | A lesser role takes SQL run from inside the network, which Bicep cannot do |
 | Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
 | A NAT gateway for outbound traffic | The load balancer | $32/month |
+
+## 🔁 Checked against Flux's and Microsoft's GitOps guidance
+
+Compared with Flux's recommended settings for [Kustomizations](https://fluxcd.io/flux/components/kustomize/kustomizations/#recommended-settings) and [Helm releases](https://fluxcd.io/flux/components/helm/helmreleases/#recommended-settings), its [OCI workflow](https://fluxcd.io/flux/cheatsheets/oci-artifacts/) and [security best practices](https://fluxcd.io/flux/security/best-practices/), and with Microsoft's [GitOps with Flux v2](https://learn.microsoft.com/azure/azure-arc/kubernetes/conceptual-gitops-flux2), [its CI/CD workflow](https://learn.microsoft.com/azure/azure-arc/kubernetes/conceptual-gitops-flux2-ci-cd) and [GitOps for AKS](https://learn.microsoft.com/azure/architecture/example-scenario/gitops-aks/gitops-blueprint-aks).
+
+**Followed**
+
+- Flux runs as the AKS extension, which keeps it current, and reads the registry with its own workload identity
+- The extension's multi-tenancy lockdown stays on, and every Flux object lives in the configuration's namespace
+- Add-ons are applied, and healthy, before the app. Both Kustomizations prune what was removed, wait for health, and retry two minutes after a failure
+- The bundle is published with the commit it was built from
+- Helm charts come from OCI registries through `OCIRepository`, with drift detection on
+- Manifests are validated on every pull request, with Flux's own validator (`flux schema`, which is still in preview)
+- Strict substitution is on, so a placeholder with no value fails instead of becoming an empty string
+- Only stable Flux API versions are used, and nothing secret is in the manifests or the bundle
+
+**Not followed, and why**
+
+| Guidance | Here | Why |
+| --- | --- | --- |
+| Microsoft: a separate GitOps repository, where each deployment arrives as a reviewed pull request of rendered manifests | One repository. CI renders the manifests and publishes them to the registry | This is Flux's OCI workflow, which the AKS extension supports but Microsoft's workflow article does not describe. With one person and one environment, the pull request to `main` is the review |
+| Flux: sign the bundle, and have Flux verify the signature before applying it | Unsigned | Whoever can push to the registry can deploy to the cluster; that is CI's identity and the subscription's owner. Signing without a stored key is the kind Flux still calls experimental |
+| Flux and Microsoft: report each rollout back, as alerts or as a status on the commit | The compliance state in the Azure portal | Either needs a token stored in the cluster |
+| Flux: `latest` for staging; a `stable` tag or a version range for production | `latest` | There is one environment, and it is for practice |
+| Microsoft's samples pin chart versions | A 1.x range for both charts, as in Flux's own examples | New releases arrive without anyone doing anything. The cost is in the table above: Git does not say which version is running |
+| Microsoft: a second person reviews every change to `main`; signed commits | `main` requires the Tests check and refuses force pushes, and that is all | One contributor, so there is nobody to review |
+| Flux: start kustomize-controller with `--no-remote-bases` | Not checked | The extension sets the controller's flags. Nothing in `k8s/` uses a remote base |
 
 ## 🎓 Things to practise on it
 
