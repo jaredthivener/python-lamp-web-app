@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/python:1-3.13-bullseye
+FROM mcr.microsoft.com/devcontainers/python:3-3.14-trixie
 
 # Install additional system dependencies
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \

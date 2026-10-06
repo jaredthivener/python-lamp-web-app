@@ -1,8 +1,9 @@
 # ------------------------------------------------------------------------
 # 🐍 Multi-stage build for FastAPI + PostgreSQL with UV package manager
 # ------------------------------------------------------------------------
-ARG PYTHON_VERSION=3.14.1
-FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:b823ded4377ebb5ff1af5926702df2284e53cecbc6e3549e93a19d8632a1897e AS builder
+# The version and digest are written out in both FROM lines rather than passed through an ARG,
+# which Dependabot cannot read: with an ARG here it never proposes a newer Python.
+FROM python:3.14.8-slim-trixie@sha256:f85c5697265c178cc6887276c55fe16cf3d14ca35c3df6a5eab3b360534a55d2 AS builder
 
 # Environment setup for clean, fast, reproducible builds
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,7 +34,7 @@ RUN mkdir -p /deps \
 # ------------------------------------------------------------------------
 # 🏗️ Production Stage
 # ------------------------------------------------------------------------
-FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:b823ded4377ebb5ff1af5926702df2284e53cecbc6e3549e93a19d8632a1897e
+FROM python:3.14.8-slim-trixie@sha256:f85c5697265c178cc6887276c55fe16cf3d14ca35c3df6a5eab3b360534a55d2
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
@@ -50,11 +51,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# Install runtime deps (no compilers, no apt cache left behind)
+# Install runtime deps (no compilers, no apt cache left behind). No libpq here: psycopg2-binary
+# loads the copy inside its own wheel, so the system one would only be something to patch.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 tini ca-certificates libssl3 \
+    tini ca-certificates \
     # Cleanup: aggressively remove APT metadata and logs
-    && rm -rf /var/lib/apt/lists/* /var/cache/* /usr/share/doc/* /usr/share/man/* /var/log/* /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/* /usr/share/doc/* /usr/share/man/* /var/log/* /tmp/* \
+    # Nothing is installed at run time, and pip carries its own copies of libraries that fall behind
+    && pip uninstall --yes --root-user-action=ignore pip
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser -s /bin/sh -m appuser

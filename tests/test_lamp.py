@@ -2,10 +2,12 @@
 Checks for the lamp: toggles are atomic, the API reports them, streams fan them out,
 and a lost database degrades the app instead of taking it down.
 """
+
 import asyncio
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,9 +23,12 @@ STATUS = "/api/v1/lamp/status"
 @pytest.fixture
 def store(tmp_path):
     # CI sets TEST_DATABASE_URL to repeat every check against a real Postgres.
-    engine = create_engine(os.getenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'lamp.db'}"))
+    engine = create_engine(
+        os.getenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'lamp.db'}")
+    )
     metadata.drop_all(engine)
-    return Store(engine)
+    yield Store(engine)
+    engine.dispose()
 
 
 @pytest.fixture
@@ -39,7 +44,13 @@ def test_toggle_flips_the_lamp_and_counts_it(client):
     assert client.get(STATUS).json()["is_on"] is False
 
     on = client.post(TOGGLE, headers={"X-Session-ID": "visitor-1"}).json()
-    assert (on["is_on"], on["status"], on["today"], on["lifetime"], on["visitors_today"]) == (True, "on", 1, 1, 1)
+    assert (
+        on["is_on"],
+        on["status"],
+        on["today"],
+        on["lifetime"],
+        on["visitors_today"],
+    ) == (True, "on", 1, 1, 1)
     assert on["recent"][0]["action"] == "on"
 
     off = client.post(TOGGLE, headers={"X-Session-ID": "visitor-1"}).json()
@@ -57,7 +68,9 @@ def test_rapid_toggles_are_refused(client, monkeypatch):
 def test_oversized_headers_are_clipped_to_the_column(client, store):
     assert client.post(TOGGLE, headers={"X-Session-ID": "x" * 5000}).status_code == 200
     with store.engine.connect() as conn:
-        assert len(conn.execute(select(lamp_activities.c.session_id)).scalar_one()) == 100
+        assert (
+            len(conn.execute(select(lamp_activities.c.session_id)).scalar_one()) == 100
+        )
 
 
 def test_concurrent_pulls_never_lose_a_flip(store):
@@ -68,13 +81,19 @@ def test_concurrent_pulls_never_lose_a_flip(store):
     assert (snapshot.lifetime, snapshot.is_on) == (40, False)
     # Each pull saw the state the one before it left behind.
     with store.engine.connect() as conn:
-        actions = conn.execute(select(lamp_activities.c.action).order_by(lamp_activities.c.id)).scalars().all()
+        actions = (
+            conn.execute(
+                select(lamp_activities.c.action).order_by(lamp_activities.c.id)
+            )
+            .scalars()
+            .all()
+        )
     assert actions == ["on", "off"] * 20
 
 
 def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     path = tmp_path / "deployed.db"
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db:
         db.executescript("""
             CREATE TABLE lamp_status (
                 id INTEGER PRIMARY KEY, is_on BOOLEAN NOT NULL DEFAULT FALSE,
@@ -92,6 +111,7 @@ def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     before = store.snapshot()
     assert (before.is_on, before.lifetime, before.today) == (True, 1, 1)
     assert store.toggle().is_on is False
+    store.engine.dispose()
 
 
 def test_every_open_stream_hears_a_toggle(store):
@@ -123,10 +143,14 @@ def test_page_and_health(client):
 def test_a_lost_database_degrades_instead_of_crashing(client, monkeypatch):
     assert client.get(STATUS).status_code == 200  # the lamp has been seen once
 
-    monkeypatch.setattr(main, "store", Store(create_engine("sqlite:////nonexistent/lamp.db")))
+    monkeypatch.setattr(
+        main, "store", Store(create_engine("sqlite:////nonexistent/lamp.db"))
+    )
     main.hub.checked_at = float("-inf")
     assert client.get("/health").json()["status"] == "degraded"
     assert client.get(STATUS).status_code == 200  # last known state
 
-    monkeypatch.setattr(main, "hub", main.Hub())  # a fresh process has nothing to fall back on
+    monkeypatch.setattr(
+        main, "hub", main.Hub()
+    )  # a fresh process has nothing to fall back on
     assert client.get(STATUS).status_code == 503
