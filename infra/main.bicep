@@ -3,76 +3,56 @@ targetScope = 'subscription'
 // =============================================================================
 // Azure Infrastructure for Lamp Web App - Main Template
 // =============================================================================
-// This Bicep template orchestrates the deployment of the lamp web app infrastructure
-// using modular design for better maintainability and reusability.
+// An AKS cluster that reconciles itself from this repository's k8s/ folder.
 //
 // Architecture:
-// - Monitoring module: Log Analytics workspace and Application Insights
-// - App Service module: App Service Plan and App Service with container support
-// - ACR module: Azure Container Registry with security and webhooks
+// - Network module: virtual network, private DNS for Postgres, the site's public IP
+// - Monitoring module: managed Prometheus for metrics, Container Insights for logs
+// - ACR module: registry for the app image and the Flux manifest bundle
+// - PostgreSQL module: private flexible server with Entra-only sign-in
+// - AKS module: the cluster, its identities, and the Flux (GitOps) configuration
+// - Schedule module: stops the cluster overnight and starts it in the morning
 //
 // Security Features:
-// - System-managed identity for secure ACR authentication
-// - HTTPS-only access enforced
-// - No admin credentials stored
-// - Least privilege access (AcrPull role only)
+// - No passwords or keys anywhere: every hop uses a managed identity
+// - Kubernetes sign-in and authorization through Entra ID, local accounts disabled
+// - Postgres reachable only from inside the virtual network
 // =============================================================================
 @description('The name of the resource group where resources will be deployed')
-param resourceGroupName string = 'rg-python-webapp'
+param resourceGroupName string = 'rg-lamp-web-app'
 
 @description('The name of the environment (e.g., dev, staging, prod)')
 @allowed(['dev', 'staging', 'prod'])
 param environmentName string
 
-@description('The Azure region where resources will be deployed')
-@allowed(['centralus', 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'southeastasia'])
-param location string = 'eastus'
+@description('The Azure region where resources will be deployed. Credit-based subscriptions cannot create PostgreSQL flexible servers in every region: `az postgres flexible-server list-skus -l <region>` shows whether one is open to yours.')
+param location string = 'westus3'
 
-@description('The SKU for the App Service Plan')
-@allowed(['F1', 'D1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P1v3', 'P2v3', 'P3v3'])
-param appServicePlanSku string = 'F1'
+@description('Kubernetes minor version. AKS applies new patch releases of it automatically.')
+param kubernetesVersion string = '1.36'
 
-@description('The SKU for the Azure Container Registry')
-@allowed(['Basic', 'Standard', 'Premium'])
-param containerRegistrySku string = 'Basic'
+@description('VM size for every node. Must be an Arm64 size with a local disk, which is what an ephemeral OS disk lives on.')
+param nodeVmSize string = 'Standard_D2pds_v6'
 
-@description('The port number the application listens on')
-param appPort string = '8000'
+@description('How many nodes the cluster runs. Each one costs about 9 cents for every hour the cluster is up. Two are not enough: see the node pool in modules/compute/aks.bicep.')
+@minValue(3)
+param nodeCount int = 3
 
-@description('The Git repository URL containing the source code and Dockerfile')
-param sourceRepositoryUrl string = 'https://github.com/jaredthivener/python-lamp-web-app'
+@description('Object ID of the Entra user or group that administers the cluster with kubectl. Empty grants nobody.')
+param clusterAdminObjectId string = ''
 
-@description('The Git branch to use for building the image')
-param sourceBranch string = 'main'
+@description('When the cluster starts each day, as HH:mm in scheduleTimeZone')
+param clusterStartTime string = '09:00'
 
-@description('The name of the Docker image to build')
-param imageName string = 'lamp-app'
+@description('When the cluster stops each day, as HH:mm in scheduleTimeZone')
+param clusterStopTime string = '17:00'
 
-@description('The tag for the Docker image')
-param imageTag string = 'latest'
-
-@description('The path to the Dockerfile relative to the repository root')
-param dockerfilePath string = 'Dockerfile'
-
-@description('Administrator password for the PostgreSQL flexible server. Required; provide via parameter file or azd secure prompt. Must be at least 16 characters with mixed case, digits, and special characters (enforced by PostgreSQL at deploy time).')
-@secure()
-param postgresAdminPassword string
+@description('Windows time zone name the schedule runs in')
+param scheduleTimeZone string = 'Eastern Standard Time'
 
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var resourcePrefix = 'lamp'
-
-// Resource names following Azure naming conventions
-var containerRegistryName = '${resourcePrefix}acr${resourceToken}'
-var appServicePlanName = '${resourcePrefix}-plan-${resourceToken}'
-var appServiceName = '${resourcePrefix}-app-${resourceToken}'
-var logAnalyticsWorkspaceName = '${resourcePrefix}-logs-${resourceToken}'
-var applicationInsightsName = '${resourcePrefix}-ai-${resourceToken}'
-var managedIdentityName = '${resourcePrefix}-identity-${resourceToken}'
-var keyVaultName = '${resourcePrefix}-kv-${resourceToken}'
-var postgresServerName = '${resourcePrefix}-postgres-${resourceToken}'
-var postgresDatabaseName = '${resourcePrefix}_db_${resourceToken}'
-var dashboardName = '${resourcePrefix}-dashboard-${resourceToken}'
 
 // Tags for resource management
 var commonTags = {
@@ -81,158 +61,155 @@ var commonTags = {
   managedBy: 'bicep'
 }
 
-// Resource Group Definition
-// =============================================================================
-// This resource group will contain all the resources for the lamp web app
-// =============================================================================
+// Kubernetes names the identities are trusted for. k8s/ has to use the same ones.
+var appNamespace = 'lamp'
+var appServiceAccount = 'lamp-app'
+var postgresDatabaseName = 'lamp'
+
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
   name: resourceGroupName
   location: location
   tags: commonTags
 }
 
-// =============================================================================
-// Monitoring Module Deployment
-// =============================================================================
+module network 'modules/network/network.bicep' = {
+  name: 'network-deployment'
+  scope: resourceGroup
+  params: {
+    virtualNetworkName: '${resourcePrefix}-vnet-${resourceToken}'
+    publicIpName: '${resourcePrefix}-ip-${resourceToken}'
+    dnsLabel: '${resourcePrefix}-${resourceToken}'
+    location: location
+    tags: commonTags
+  }
+}
+
 module monitoring 'modules/monitor/monitoring.bicep' = {
   name: 'monitoring-deployment'
   scope: resourceGroup
   params: {
-    logAnalyticsWorkspaceName: logAnalyticsWorkspaceName
-    applicationInsightsName: applicationInsightsName
+    monitorWorkspaceName: '${resourcePrefix}-metrics-${resourceToken}'
+    logAnalyticsWorkspaceName: '${resourcePrefix}-logs-${resourceToken}'
     location: location
     tags: commonTags
-    logRetentionInDays: 30
+    metricsReaderObjectId: clusterAdminObjectId
   }
 }
 
-// =============================================================================
-// Managed Identity Module Deployment
-// =============================================================================
-module managedIdentity 'modules/security/managed-identity.bicep' = {
-  name: 'managed-identity-deployment'
+// Three identities, one job each. None of them has a secret to leak.
+module clusterIdentity 'modules/security/managed-identity.bicep' = {
+  name: 'cluster-identity-deployment'
   scope: resourceGroup
   params: {
-    managedIdentityName: managedIdentityName
+    managedIdentityName: '${resourcePrefix}-aks-${resourceToken}' // the control plane: load balancer and network changes
     location: location
     tags: commonTags
   }
 }
 
-// =============================================================================
-// Key Vault Module Deployment
-// =============================================================================
-module keyVault 'modules/security/keyvault.bicep' = {
-  name: 'keyvault-deployment'
+module appIdentity 'modules/security/managed-identity.bicep' = {
+  name: 'app-identity-deployment'
   scope: resourceGroup
   params: {
-    keyVaultName: keyVaultName
+    managedIdentityName: '${resourcePrefix}-app-${resourceToken}' // the lamp pods: signing in to Postgres
     location: location
     tags: commonTags
-    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
-    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
   }
 }
 
-// =============================================================================
-// PostgreSQL Database Module Deployment
-// =============================================================================
-module postgresDatabase 'modules/database/postgresql.bicep' = {
-  name: 'postgresql-deployment'
+module fluxIdentity 'modules/security/managed-identity.bicep' = {
+  name: 'flux-identity-deployment'
   scope: resourceGroup
   params: {
-    postgresServerName: postgresServerName
-    postgresDatabaseName: postgresDatabaseName
+    managedIdentityName: '${resourcePrefix}-flux-${resourceToken}' // Flux: pulling the manifest bundle
     location: location
     tags: commonTags
-    administratorLogin: 'postgres'
-    administratorLoginPassword: postgresAdminPassword
-    keyVaultName: keyVault.outputs.keyVaultName
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
-// =============================================================================
-// Azure Container Registry Module Deployment (Combined)
-// =============================================================================
 module acr 'modules/container/acr.bicep' = {
   name: 'acr-deployment'
   scope: resourceGroup
   params: {
-    containerRegistryName: containerRegistryName
+    containerRegistryName: '${resourcePrefix}acr${resourceToken}'
     location: location
-    containerRegistrySku: containerRegistrySku
     tags: commonTags
-    sourceRepositoryUrl: sourceRepositoryUrl
-    sourceBranch: sourceBranch
-    imageName: imageName
-    imageTag: imageTag
-    dockerfilePath: dockerfilePath
-    managedIdentityId: managedIdentity.outputs.managedIdentityId
-    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    appServicePrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    webhookServiceUri: '' // Will be created separately to avoid circular dependency
   }
 }
 
-// =============================================================================
-// App Service Module Deployment
-// =============================================================================
-module appService 'modules/compute/appservice.bicep' = {
-  name: 'appservice-deployment'
+module postgresDatabase 'modules/database/postgresql.bicep' = {
+  name: 'postgresql-deployment'
   scope: resourceGroup
   params: {
-    appServicePlanName: appServicePlanName
-    appServiceName: appServiceName
+    postgresServerName: '${resourcePrefix}-postgres-${resourceToken}'
+    postgresDatabaseName: postgresDatabaseName
     location: location
-    appServicePlanSku: appServicePlanSku
     tags: commonTags
-    appPort: appPort
-    containerRegistryLoginServer: acr.outputs.containerRegistryLoginServer
-    applicationInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
-    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
-    keyVaultUri: keyVault.outputs.keyVaultUri
+    delegatedSubnetId: network.outputs.postgresSubnetId
+    privateDnsZoneId: network.outputs.postgresDnsZoneId
+    administratorPrincipalId: appIdentity.outputs.managedIdentityPrincipalId
+    administratorPrincipalName: appIdentity.outputs.managedIdentityName
+  }
+}
+
+module aks 'modules/compute/aks.bicep' = {
+  name: 'aks-deployment'
+  scope: resourceGroup
+  params: {
+    clusterName: '${resourcePrefix}-aks-${resourceToken}'
+    location: location
+    tags: commonTags
+    kubernetesVersion: kubernetesVersion
+    nodeVmSize: nodeVmSize
+    nodeCount: nodeCount
+    clusterAdminObjectId: clusterAdminObjectId
+    clusterIdentityName: clusterIdentity.outputs.managedIdentityName
+    appIdentityName: appIdentity.outputs.managedIdentityName
+    fluxIdentityName: fluxIdentity.outputs.managedIdentityName
+    appNamespace: appNamespace
+    appServiceAccount: appServiceAccount
+    virtualNetworkName: network.outputs.virtualNetworkName
+    nodeSubnetId: network.outputs.nodeSubnetId
+    publicIpName: network.outputs.publicIpName
+    containerRegistryName: acr.outputs.containerRegistryName
+    prometheusRuleId: monitoring.outputs.prometheusRuleId
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-    managedIdentityId: managedIdentity.outputs.managedIdentityId
-    managedIdentityPrincipalId: managedIdentity.outputs.managedIdentityPrincipalId
-    managedIdentityClientId: managedIdentity.outputs.managedIdentityClientId
-    postgresConnectionStringSecretName: postgresDatabase.outputs.connectionStringSecretName
-    imageTag: imageTag
+    containerInsightsRuleId: monitoring.outputs.containerInsightsRuleId
+    // Everything the manifests in k8s/ need to know about this deployment
+    manifestValues: {
+      LAMP_HOST: network.outputs.hostName
+      PUBLIC_IP_NAME: network.outputs.publicIpName
+      PUBLIC_IP_RESOURCE_GROUP: resourceGroupName
+      APP_IDENTITY_CLIENT_ID: appIdentity.outputs.managedIdentityClientId
+      POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.serverFqdn} dbname=${postgresDatabaseName} user=${appIdentity.outputs.managedIdentityName} sslmode=require'
+    }
   }
 }
 
-// =============================================================================
-// Azure Dashboard Module Deployment
-// =============================================================================
-module dashboard 'modules/monitor/dashboard.bicep' = {
-  name: 'dashboard-deployment'
+module schedule 'modules/compute/schedule.bicep' = {
+  name: 'schedule-deployment'
   scope: resourceGroup
   params: {
-    dashboardName: dashboardName
+    clusterName: aks.outputs.clusterName
     location: location
     tags: commonTags
-    applicationInsightsId: monitoring.outputs.applicationInsightsId
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServiceId: appService.outputs.appServiceId
-    appServiceName: appService.outputs.appServiceName
-    postgresServerId: postgresDatabase.outputs.serverId
-    postgresServerName: postgresDatabase.outputs.serverName
+    startTime: clusterStartTime
+    stopTime: clusterStopTime
+    timeZone: scheduleTimeZone
   }
 }
 
-// =============================================================================
-// ACR Integration Module (Role Assignment and Webhook)
 // =============================================================================
 // Outputs
 // =============================================================================
-@description('The name of the deployed App Service')
-output appServiceName string = appService.outputs.appServiceName
+@description('Where the lamp is served')
+output lampUrl string = 'https://${network.outputs.hostName}'
 
-@description('The default hostname of the deployed App Service')
-output appServiceHostName string = appService.outputs.appServiceHostName
+@description('The name of the AKS cluster')
+output clusterName string = aks.outputs.clusterName
 
-@description('The URL of the deployed application')
-output appServiceUrl string = appService.outputs.appServiceUrl
+@description('Fetches kubectl credentials for the cluster')
+output getCredentialsCommand string = 'az aks get-credentials --resource-group ${resourceGroupName} --name ${aks.outputs.clusterName}'
 
 @description('The name of the Container Registry')
 output containerRegistryName string = acr.outputs.containerRegistryName
@@ -240,59 +217,8 @@ output containerRegistryName string = acr.outputs.containerRegistryName
 @description('The login server of the Container Registry')
 output containerRegistryLoginServer string = acr.outputs.containerRegistryLoginServer
 
-@description('The built image name')
-output imageName string = acr.outputs.imageName
-
-@description('The built image tag')
-output imageTag string = acr.outputs.imageTag
-
-@description('The full image name with registry URL including repository')
-output fullImageName string = acr.outputs.fullImageName
-
-@description('Manual build command for the container image')
-output manualBuildCommand string = 'az acr build --registry ${acr.outputs.containerRegistryName} --image ${acr.outputs.imageName}:${acr.outputs.imageTag} --file ${acr.outputs.dockerfilePath} ${acr.outputs.sourceRepositoryUrl}#${acr.outputs.sourceBranch}'
-
-@description('The deployment script name used for building the image')
-output buildScriptName string = acr.outputs.buildScriptName
-
-@description('The resource ID of the App Service')
-output appServiceId string = appService.outputs.appServiceId
-
-@description('The principal ID of the App Service managed identity')
-output appServicePrincipalId string = appService.outputs.appServicePrincipalId
-
-@description('The name of the Log Analytics workspace')
-output logAnalyticsWorkspaceName string = monitoring.outputs.logAnalyticsWorkspaceName
-
-@description('The name of the Application Insights instance')
-output applicationInsightsName string = monitoring.outputs.applicationInsightsName
-
-@description('The instrumentation key for Application Insights')
-output applicationInsightsInstrumentationKey string = monitoring.outputs.applicationInsightsInstrumentationKey
-
-@description('The connection string for Application Insights')
-output applicationInsightsConnectionString string = monitoring.outputs.applicationInsightsConnectionString
-
-@description('The name of the Key Vault')
-output keyVaultName string = keyVault.outputs.keyVaultName
-
-@description('The URI of the Key Vault')
-output keyVaultUri string = keyVault.outputs.keyVaultUri
-
-@description('The name of the PostgreSQL Server')
-output postgresServerName string = postgresDatabase.outputs.serverName
-
 @description('The fully qualified domain name of the PostgreSQL Server')
 output postgresServerFqdn string = postgresDatabase.outputs.serverFqdn
 
-@description('The name of the PostgreSQL Database')
-output postgresDatabaseName string = postgresDatabase.outputs.databaseName
-
-@description('The connection string secret name in Key Vault')
-output postgresConnectionStringSecretName string = postgresDatabase.outputs.connectionStringSecretName
-
-@description('The name of the Azure Dashboard')
-output dashboardName string = dashboard.outputs.dashboardName
-
-@description('The URL to access the monitoring dashboard')
-output dashboardUrl string = dashboard.outputs.dashboardUrl
+@description('The Azure Monitor workspace that stores the cluster\'s Prometheus metrics')
+output monitorWorkspaceName string = monitoring.outputs.monitorWorkspaceName

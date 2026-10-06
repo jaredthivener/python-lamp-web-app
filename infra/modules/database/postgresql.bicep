@@ -1,77 +1,68 @@
 // =============================================================================
-// Azure Database for PostgreSQL - Flexible Server Module (Free Tier)
+// Azure Database for PostgreSQL - Flexible Server Module
 // =============================================================================
-// This module deploys Azure Database for PostgreSQL - Flexible Server with:
-// - Free tier (Burstable B1ms, 32GB storage, 1 vCore, 2GB RAM)
-// - System-managed identity authentication
-// - SSL enforcement
-// - Connection string stored in Key Vault
+// - Burstable B1ms, 32 GB: the smallest server there is
+// - Private: it has an address inside the virtual network and none on the internet
+// - No passwords: the only way in is an Entra token, and the only principal allowed
+//   is the managed identity the lamp pods run as
 // =============================================================================
 
 @description('The name of the PostgreSQL server')
 param postgresServerName string
 
 @description('The name of the PostgreSQL database')
-param postgresDatabaseName string = 'lamp_db'
+param postgresDatabaseName string
 
 @description('The Azure region where the PostgreSQL resources will be deployed')
-param location string = resourceGroup().location
+param location string
 
-@description('Common tags to be applied to all resources')
+@description('Tags to apply to the resources')
 param tags object = {}
 
-@description('The administrator login username for the PostgreSQL server')
-param administratorLogin string = 'postgres'
+@description('Resource ID of the subnet delegated to PostgreSQL flexible servers')
+param delegatedSubnetId string
 
-@description('The administrator login password for the PostgreSQL server')
-@secure()
-param administratorLoginPassword string
+@description('Resource ID of the private DNS zone the server registers itself in')
+param privateDnsZoneId string
 
-@description('The Key Vault name where secrets will be stored')
-param keyVaultName string
+@description('Object (principal) ID of the managed identity that administers the server')
+param administratorPrincipalId string
 
-@description('The resource ID of the Log Analytics workspace for diagnostic settings')
-param logAnalyticsWorkspaceId string
+@description('Name of that managed identity. It doubles as the PostgreSQL user name.')
+param administratorPrincipalName string
 
-// =============================================================================
-// Azure Database for PostgreSQL - Flexible Server (Free Tier)
-// =============================================================================
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: postgresServerName
   location: location
   tags: tags
   sku: {
-    name: 'Standard_B1ms'  // Free tier: 1 vCore, 2GB RAM
+    name: 'Standard_B1ms'
     tier: 'Burstable'
   }
   properties: {
-    administratorLogin: administratorLogin
-    administratorLoginPassword: administratorLoginPassword
-    version: '17'  // PostgreSQL 17
+    version: '17'
+    authConfig: {
+      activeDirectoryAuth: 'Enabled'
+      passwordAuth: 'Disabled'
+      tenantId: tenant().tenantId
+    }
     storage: {
-      storageSizeGB: 32  // Free tier: 32GB storage
-      iops: 120
-      tier: 'P4'
+      storageSizeGB: 32
     }
     backup: {
       backupRetentionDays: 7
       geoRedundantBackup: 'Disabled'
     }
     network: {
-      publicNetworkAccess: 'Enabled'
+      delegatedSubnetResourceId: delegatedSubnetId
+      privateDnsZoneArmResourceId: privateDnsZoneId
     }
     highAvailability: {
-      mode: 'Disabled'  // Not available in free tier
-    }
-    maintenanceWindow: {
-      customWindow: 'Disabled'
+      mode: 'Disabled'
     }
   }
 }
 
-// =============================================================================
-// PostgreSQL Database
-// =============================================================================
 resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
   parent: postgresServer
   name: postgresDatabaseName
@@ -81,154 +72,21 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
   }
 }
 
-// =============================================================================
-// Firewall Rules
-// =============================================================================
-// Allow Azure services to access the server
-resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
+// ponytail: the app signs in as the server's administrator. A second, least-privileged
+// role takes SQL run from inside the network (pgaadauth_create_principal), which Bicep
+// cannot do; add it when something other than the lamp shares this server.
+resource postgresAdministrator 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@2024-08-01' = {
   parent: postgresServer
-  name: 'AllowAzureServices'
+  name: administratorPrincipalId
   properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-
-// =============================================================================
-// Key Vault Secret for Connection String
-// =============================================================================
-// Get reference to existing Key Vault
-resource keyVault 'Microsoft.KeyVault/vaults@2024-12-01-preview' existing = {
-  name: keyVaultName
-}
-
-// Store the PostgreSQL connection string in Key Vault
-resource connectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-12-01-preview' = {
-  parent: keyVault
-  name: 'postgresql-connection-string'
-  properties: {
-    value: 'host=${postgresServer.properties.fullyQualifiedDomainName} port=5432 dbname=${postgresDatabaseName} user=${administratorLogin} password=${administratorLoginPassword} sslmode=require'
-    contentType: 'application/x-postgresql-connection-string'
-    attributes: {
-      enabled: true
-    }
-  }
-}
-
-// =============================================================================
-// Database Monitoring Configuration
-// =============================================================================
-// Enable diagnostic settings to send PostgreSQL logs and metrics to Log Analytics
-resource postgresDiagnosticSetting 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'PostgreSQL-Diagnostics'
-  scope: postgresServer
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'PostgreSQLLogs'
-        enabled: true
-      }
-      {
-        category: 'PostgreSQLFlexSessions'
-        enabled: true
-      }
-      {
-        category: 'PostgreSQLFlexQueryStoreRuntime'
-        enabled: true
-      }
-      {
-        category: 'PostgreSQLFlexQueryStoreWaitStats'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-      }
-    ]
-  }
-}
-
-// =============================================================================
-// PostgreSQL Server Configuration (Simplified for Development)
-// =============================================================================
-// Note: Advanced logging configurations are commented out to avoid "server busy" conflicts
-// These can be configured manually after deployment if needed
-
-// Configure PostgreSQL server parameters for enhanced logging (OPTIONAL - may cause conflicts)
-/*
-resource logMinDurationStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'log_min_duration_statement'
-  properties: {
-    value: '1000'  // Log queries taking longer than 1 second
-    source: 'user-override'
-  }
-}
-
-resource logStatement 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'log_statement'
-  properties: {
-    value: 'ddl'  // Log DDL statements (CREATE, ALTER, DROP)
-    source: 'user-override'
+    principalType: 'ServicePrincipal'
+    principalName: administratorPrincipalName
+    tenantId: tenant().tenantId
   }
   dependsOn: [
-    logMinDurationStatement
+    postgresDatabase // the server only takes one change at a time
   ]
 }
-
-resource logConnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'log_connections'
-  properties: {
-    value: 'on'  // Log connection attempts
-    source: 'user-override'
-  }
-  dependsOn: [
-    logStatement
-  ]
-}
-
-resource logDisconnections 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'log_disconnections'
-  properties: {
-    value: 'on'  // Log disconnections
-    source: 'user-override'
-  }
-  dependsOn: [
-    logConnections
-  ]
-}
-
-// Enable Query Store for performance insights
-resource queryStoreCapture 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'pg_qs.query_capture_mode'
-  properties: {
-    value: 'top'  // Capture top queries for performance analysis
-    source: 'user-override'
-  }
-  dependsOn: [
-    logDisconnections
-  ]
-}
-
-resource queryStoreMaxQueryTextLength 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
-  parent: postgresServer
-  name: 'pg_qs.max_query_text_length'
-  properties: {
-    value: '6000'  // Store up to 6000 characters of query text
-    source: 'user-override'
-  }
-  dependsOn: [
-    queryStoreCapture
-  ]
-}
-*/
 
 // =============================================================================
 // Outputs
@@ -238,18 +96,3 @@ output serverFqdn string = postgresServer.properties.fullyQualifiedDomainName
 
 @description('The name of the PostgreSQL server')
 output serverName string = postgresServer.name
-
-@description('The name of the PostgreSQL database')
-output databaseName string = postgresDatabase.name
-
-@description('The administrator login username')
-output administratorLogin string = administratorLogin
-
-@description('The Key Vault secret name containing the connection string')
-output connectionStringSecretName string = connectionStringSecret.name
-
-@description('The resource ID of the PostgreSQL server')
-output serverId string = postgresServer.id
-
-@description('The resource ID of the PostgreSQL database')
-output databaseId string = postgresDatabase.id

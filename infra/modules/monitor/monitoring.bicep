@@ -1,14 +1,23 @@
 // =============================================================================
-// Monitoring Module (Log Analytics + Application Insights)
+// Monitoring Module (managed Prometheus + Container Insights logs)
 // =============================================================================
-// This module creates monitoring resources for the application
+// Microsoft's recommended pairing for AKS:
+// - Metrics: an Azure Monitor workspace holds the cluster's Prometheus metrics.
+//   Browse them in the portal: the cluster's Monitor > Dashboards with Grafana.
+// - Logs: a Log Analytics workspace holds container logs, Kubernetes events and the
+//   pod inventory (the "Logs and events" profile). Query them with KQL from the
+//   cluster's Monitor > Logs.
+// Each has a collection rule telling the cluster's agents what to send where.
 // =============================================================================
+
+@description('The name of the Azure Monitor workspace')
+param monitorWorkspaceName string
 
 @description('The name of the Log Analytics workspace')
 param logAnalyticsWorkspaceName string
 
-@description('The name of the Application Insights instance')
-param applicationInsightsName string
+@description('Most log data, in GB, the workspace accepts in a day. Collection pauses until the next day once it is reached.')
+param dailyLogCapGb string = '0.2'
 
 @description('The Azure region where resources will be deployed')
 param location string
@@ -16,11 +25,58 @@ param location string
 @description('Tags to apply to the resources')
 param tags object = {}
 
-@description('Log retention in days')
-param logRetentionInDays int = 30
+@description('Object ID of a user or group allowed to query the metrics. Empty grants nobody.')
+param metricsReaderObjectId string = ''
+
+resource monitorWorkspace 'Microsoft.Monitor/accounts@2023-04-03' = {
+  name: monitorWorkspaceName
+  location: location
+  tags: tags
+}
+
+resource prometheusEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2023-03-11' = {
+  name: monitorWorkspaceName
+  location: location
+  tags: tags
+  kind: 'Linux'
+  properties: {}
+}
+
+resource prometheusRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+  name: monitorWorkspaceName
+  location: location
+  tags: tags
+  kind: 'Linux'
+  properties: {
+    dataCollectionEndpointId: prometheusEndpoint.id
+    dataSources: {
+      prometheusForwarder: [
+        {
+          name: 'PrometheusDataSource'
+          streams: ['Microsoft-PrometheusMetrics']
+          labelIncludeFilter: {}
+        }
+      ]
+    }
+    destinations: {
+      monitoringAccounts: [
+        {
+          name: 'MonitoringAccount'
+          accountResourceId: monitorWorkspace.id
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: ['Microsoft-PrometheusMetrics']
+        destinations: ['MonitoringAccount']
+      }
+    ]
+  }
+}
 
 // =============================================================================
-// Log Analytics Workspace for monitoring
+// Logs
 // =============================================================================
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
   name: logAnalyticsWorkspaceName
@@ -30,50 +86,83 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02
     sku: {
       name: 'PerGB2018'
     }
-    retentionInDays: logRetentionInDays
-    features: {
-      enableLogAccessUsingOnlyResourcePermissions: true
-    }
+    retentionInDays: 30
+    // A ceiling on the bill: 0.2 GB a day is about 6 GB a month, of which the first
+    // 5 GB are free.
     workspaceCapping: {
-      dailyQuotaGb: 1
+      dailyQuotaGb: json(dailyLogCapGb)
     }
   }
 }
 
-// =============================================================================
-// Application Insights for application monitoring
-// =============================================================================
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: applicationInsightsName
+// The "Logs and events" profile, which Microsoft recommends alongside managed
+// Prometheus: metrics come from Prometheus, so only the logs are collected here.
+var logStreams = [
+  'Microsoft-ContainerLogV2'
+  'Microsoft-KubeEvents'
+  'Microsoft-KubePodInventory'
+]
+
+resource containerInsightsRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+  name: logAnalyticsWorkspaceName
   location: location
   tags: tags
-  kind: 'web'
+  kind: 'Linux'
   properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalyticsWorkspace.id
-    IngestionMode: 'LogAnalytics'
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
+    dataSources: {
+      extensions: [
+        {
+          name: 'ContainerInsightsExtension'
+          extensionName: 'ContainerInsights'
+          streams: logStreams
+          extensionSettings: {
+            dataCollectionSettings: {
+              interval: '1m'
+              namespaceFilteringMode: 'Off'
+              enableContainerLogV2: true
+            }
+          }
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        {
+          name: 'workspace'
+          workspaceResourceId: logAnalyticsWorkspace.id
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: logStreams
+        destinations: ['workspace']
+      }
+    ]
+  }
+}
+
+// Owning the subscription is not enough to read metric data: that takes this role
+resource metricsReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(metricsReaderObjectId)) {
+  name: guid(monitorWorkspace.id, metricsReaderObjectId, 'Monitoring Data Reader')
+  scope: monitorWorkspace
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b0d8363b-8ddd-447d-831f-62ca05bff136') // Monitoring Data Reader
+    principalId: metricsReaderObjectId
   }
 }
 
 // =============================================================================
 // Outputs
 // =============================================================================
-@description('The name of the Log Analytics workspace')
-output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
+@description('The name of the Azure Monitor workspace')
+output monitorWorkspaceName string = monitorWorkspace.name
+
+@description('The resource ID of the Prometheus data collection rule')
+output prometheusRuleId string = prometheusRule.id
 
 @description('The resource ID of the Log Analytics workspace')
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 
-@description('The name of the Application Insights instance')
-output applicationInsightsName string = applicationInsights.name
-
-@description('The resource ID of the Application Insights instance')
-output applicationInsightsId string = applicationInsights.id
-
-@description('The instrumentation key for Application Insights')
-output applicationInsightsInstrumentationKey string = applicationInsights.properties.InstrumentationKey
-
-@description('The connection string for Application Insights')
-output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString
+@description('The resource ID of the Container Insights data collection rule')
+output containerInsightsRuleId string = containerInsightsRule.id
