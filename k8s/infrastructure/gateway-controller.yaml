@@ -18,15 +18,21 @@ metadata:
 # The Flux objects live in flux-system, alongside the configuration that applies them,
 # and install into the namespace above. That is what the Flux extension's default
 # multi-tenancy lockdown expects: no references across namespaces.
+#
+# The chart, fetched from its registry the way Flux recommends for Helm charts.
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: envoy-gateway
   namespace: flux-system
 spec:
-  type: oci
   interval: 12h
-  url: oci://docker.io/envoyproxy
+  url: oci://docker.io/envoyproxy/gateway-helm
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    semver: "1.x" # new 1.x releases are picked up at the next interval
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -34,16 +40,16 @@ metadata:
   name: envoy-gateway
   namespace: flux-system
 spec:
-  interval: 12h
+  interval: 30m # how often the release is checked for drift
   releaseName: envoy-gateway
   targetNamespace: envoy-gateway-system
-  chart:
-    spec:
-      chart: gateway-helm
-      version: "1.x" # new 1.x releases are picked up at the next interval
-      sourceRef:
-        kind: HelmRepository
-        name: envoy-gateway
+  chartRef:
+    kind: OCIRepository
+    name: envoy-gateway
+  # Put back anything in the release that someone changes by hand
+  driftDetection:
+    mode: enabled
+  # A failed upgrade is rolled back to the release that worked
   install:
     remediation:
       retries: 3
