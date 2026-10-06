@@ -8,13 +8,15 @@ import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 
 import main
-from store import Store, lamp_activities, metadata
+import store as storage
 
 TOGGLE = "/api/v1/lamp/toggle"
 STATUS = "/api/v1/lamp/status"
@@ -26,8 +28,8 @@ def store(tmp_path):
     engine = create_engine(
         os.getenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'lamp.db'}")
     )
-    metadata.drop_all(engine)
-    yield Store(engine)
+    storage.metadata.drop_all(engine)
+    yield storage.Store(engine)
     engine.dispose()
 
 
@@ -59,17 +61,25 @@ def test_toggle_flips_the_lamp_and_counts_it(client):
 
 
 def test_rapid_toggles_are_refused(client, monkeypatch):
-    monkeypatch.setattr(main, "TOGGLE_COOLDOWN_SECONDS", 60)
     assert client.post(TOGGLE).status_code == 200
+    monkeypatch.setattr(main, "TOGGLE_COOLDOWN_SECONDS", 60)
     assert client.post(TOGGLE).status_code == 429
     assert client.get(STATUS).json()["lifetime"] == 1
+
+
+def test_the_cooldown_is_for_the_lamp_not_for_each_replica(client, store, monkeypatch):
+    store.toggle()  # a pull taken by another replica, which this one has not heard about
+    monkeypatch.setattr(main, "TOGGLE_COOLDOWN_SECONDS", 60)
+    assert client.post(TOGGLE).status_code == 429
+    assert store.snapshot().lifetime == 1
 
 
 def test_oversized_headers_are_clipped_to_the_column(client, store):
     assert client.post(TOGGLE, headers={"X-Session-ID": "x" * 5000}).status_code == 200
     with store.engine.connect() as conn:
         assert (
-            len(conn.execute(select(lamp_activities.c.session_id)).scalar_one()) == 100
+            len(conn.execute(select(storage.lamp_activities.c.session_id)).scalar_one())
+            == 100
         )
 
 
@@ -83,7 +93,9 @@ def test_concurrent_pulls_never_lose_a_flip(store):
     with store.engine.connect() as conn:
         actions = (
             conn.execute(
-                select(lamp_activities.c.action).order_by(lamp_activities.c.id)
+                select(storage.lamp_activities.c.action).order_by(
+                    storage.lamp_activities.c.id
+                )
             )
             .scalars()
             .all()
@@ -107,11 +119,11 @@ def test_runs_on_the_tables_the_previous_version_created(tmp_path):
             INSERT INTO lamp_activities (action, session_id, previous_state) VALUES ('on', 's', 'off');
         """)
 
-    store = Store(create_engine(f"sqlite:///{path}"))
-    before = store.snapshot()
+    deployed = storage.Store(create_engine(f"sqlite:///{path}"))
+    before = deployed.snapshot()
     assert (before.is_on, before.lifetime, before.today) == (True, 1, 1)
-    assert store.toggle().is_on is False
-    store.engine.dispose()
+    assert deployed.toggle().is_on is False
+    deployed.engine.dispose()
 
 
 def test_every_open_stream_hears_a_toggle(store):
@@ -133,6 +145,65 @@ def test_every_open_stream_hears_a_toggle(store):
     asyncio.run(scenario())
 
 
+def test_replicas_agree_on_the_lamp_and_who_is_watching(store, monkeypatch):
+    monkeypatch.setattr(main, "store", store)
+    monkeypatch.setattr(main, "hub", main.Hub())
+
+    async def scenario():
+        main.hub.publish(store.snapshot())
+        stream = main.hub.subscribe()
+        assert (await anext(stream)).viewers == 1
+
+        # Another replica has three people watching, and one of them pulls the cord.
+        store.pulse("another-replica", 3)
+        store.toggle()
+        await main.catch_up()
+        heard = await anext(stream)
+        assert (heard.is_on, heard.viewers) == (True, 4)
+
+        # That replica dies without saying goodbye: its viewers lapse.
+        with store.engine.begin() as conn:
+            conn.execute(
+                update(storage.lamp_viewers)
+                .where(storage.lamp_viewers.c.replica == "another-replica")
+                .values(seen_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+            )
+        await main.catch_up()
+        assert main.hub.room == 1
+
+        await stream.aclose()
+        await main.catch_up()  # with nobody left here, this replica takes its count back
+        assert store.pulse("a-third-replica", 0)[1] == 0
+
+    asyncio.run(scenario())
+
+
+def test_a_replica_with_no_viewers_still_reports_the_whole_room(client, store):
+    store.pulse("another-replica", 2)
+    assert client.post(TOGGLE).json()["viewers"] == 2
+    assert client.get(STATUS).json()["viewers"] == 2
+
+
+def test_azure_postgres_is_signed_in_to_without_a_password(monkeypatch):
+    token = SimpleNamespace(
+        get_token=lambda scope: SimpleNamespace(token=f"for {scope}")
+    )
+    monkeypatch.setattr(storage, "_azure_identity", lambda: token)
+    monkeypatch.setattr(storage.psycopg2, "connect", lambda **params: params)
+    azure = "lamp.postgres.database.azure.com"
+
+    passwordless = storage._connect(
+        f"host={azure} dbname=lamp user=lamp-app sslmode=require"
+    )
+    assert passwordless["password"] == f"for {storage.ENTRA_POSTGRES_SCOPE}"
+    assert (passwordless["user"], passwordless["connect_timeout"]) == ("lamp-app", 5)
+
+    assert (
+        storage._connect(f"postgresql://me:secret@{azure}/lamp")["password"] == "secret"
+    )
+    assert "password" not in storage._connect("host=localhost dbname=lamp user=me")
+
+
 def test_page_and_health(client):
     assert client.get("/health").json()["status"] == "healthy"
     page = client.get("/")
@@ -144,13 +215,12 @@ def test_a_lost_database_degrades_instead_of_crashing(client, monkeypatch):
     assert client.get(STATUS).status_code == 200  # the lamp has been seen once
 
     monkeypatch.setattr(
-        main, "store", Store(create_engine("sqlite:////nonexistent/lamp.db"))
+        main, "store", storage.Store(create_engine("sqlite:////nonexistent/lamp.db"))
     )
-    main.hub.checked_at = float("-inf")
     assert client.get("/health").json()["status"] == "degraded"
+    assert client.get("/livez").status_code == 200  # a probe must not get it restarted
     assert client.get(STATUS).status_code == 200  # last known state
 
-    monkeypatch.setattr(
-        main, "hub", main.Hub()
-    )  # a fresh process has nothing to fall back on
+    # A replica that starts during the outage has nothing to fall back on
+    monkeypatch.setattr(main, "hub", main.Hub())
     assert client.get(STATUS).status_code == 503

@@ -25,9 +25,9 @@ echo "🎮 How to use:"
 echo "   • Drag the chain down, or tap its knob, to switch the lamp"
 echo "   • Press 'L', or Tab to the cord and press Enter"
 echo "   • Open a second window: both show the same lamp, live"
-if [ -z "$POSTGRES_CONNECTION_STRING" ] && [ -z "$KEY_VAULT_URI" ]; then
+if [ -z "$POSTGRES_CONNECTION_STRING" ]; then
     echo ""
-    echo "ℹ️  No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI detected."
+    echo "ℹ️  No POSTGRES_CONNECTION_STRING detected."
     echo "   The lamp will be kept in a local SQLite file instead."
 fi
 echo ""

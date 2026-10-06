@@ -1,0 +1,13 @@
+# Pods that serve the site are scheduled ahead of the cluster's tooling (Flux,
+# cert-manager and the like) and may displace it when a node is full; the displaced
+# pod simply moves to another node. System components still outrank everything.
+#
+# This matters every morning. The cluster starts one node at a time, the first node
+# fills up with whatever was waiting, and without a priority the lamp's second
+# replica could be left with no room on the node it is required to run on.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: serving
+value: 1000
+description: Pods that serve the site. Scheduled before, and able to displace, cluster tooling.

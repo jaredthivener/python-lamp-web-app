@@ -1,0 +1,62 @@
+# The gateway controller (Envoy Gateway). It implements the Kubernetes Gateway API:
+# it watches the Gateway and HTTPRoute objects in k8s/app and runs Envoy proxies to
+# match. It carries no traffic itself. Its chart also installs the Gateway API
+# definitions.
+#
+# In the cluster: the envoy-gateway pod in the envoy-gateway-system namespace.
+#
+# AKS offers a managed Gateway API controller too, and Microsoft recommends it for new
+# deployments. Measured on a real cluster, its Istio control plane reserves 1 vCPU and
+# 4 GB (two replicas of 500m and 2Gi) before serving anything; this controller reserves
+# 25m. The manifests in k8s/app are plain Gateway API, so moving to it later is a
+# change of gatewayClassName.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: envoy-gateway-system
+---
+# The Flux objects live in flux-system, alongside the configuration that applies them,
+# and install into the namespace above. That is what the Flux extension's default
+# multi-tenancy lockdown expects: no references across namespaces.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: envoy-gateway
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 12h
+  url: oci://docker.io/envoyproxy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: envoy-gateway
+  namespace: flux-system
+spec:
+  interval: 12h
+  releaseName: envoy-gateway
+  targetNamespace: envoy-gateway-system
+  chart:
+    spec:
+      chart: gateway-helm
+      version: "1.x" # new 1.x releases are picked up at the next interval
+      sourceRef:
+        kind: HelmRepository
+        name: envoy-gateway
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    deployment:
+      envoyGateway:
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi

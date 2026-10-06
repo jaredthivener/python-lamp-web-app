@@ -1,307 +1,184 @@
-# 🏗️ Azure Infrastructure - Lamp Web App
+# ☁️ Azure Infrastructure - Lamp Web App
 
-> **Modern Bicep Infrastructure with Modular Design**
+The lamp runs on Azure Kubernetes Service. Everything here is Bicep, deployed with `azd provision`, and sized to fit inside a $150/month credit.
 
-A production-ready, secure, and scalable Azure infrastructure for the Lamp Web App using modular Bicep templates with modern parameter files (.bicepparam) and comprehensive monitoring.
-
----
-
-## 📋 Table of Contents
-
-- [🎯 Overview](#-overview)
-- [🏛️ Architecture](#️-architecture)
-- [🚀 Quick Start](#-quick-start)
-- [🔧 Configuration](#-configuration)
-- [🔒 Security Features](#-security-features)
-- [📊 Monitoring](#-monitoring)
-- [🔄 CI/CD Integration](#-cicd-integration)
-- [📁 Project Structure](#-project-structure)
-- [🤝 Contributing](#-contributing)
-
----
-
-## 🎯 Overview
-
-This infrastructure deploys a **containerized Python web application** to Azure using:
-
-- **🧩 Modular Bicep templates** for maintainability
-- **🔐 User-assigned managed identity** for secure ACR access
-- **📈 Comprehensive monitoring** with Application Insights
-- **🔄 Automated deployment** via ACR webhooks
-- **✅ Modern .bicepparam files** for parameters
-
-### Key Benefits
-- ✅ **Zero cyclic dependencies**
-- ✅ **Production-ready security**
-- ✅ **Environment agnostic**
-- ✅ **Fully automated**
-
----
-
-## 🏛️ Architecture
+## 🏛️ What gets deployed
 
 ```mermaid
-graph TB
-    subgraph "Azure Subscription"
-        RG[Resource Group]
-        
-        subgraph "Monitoring"
-            LA[Log Analytics]
-            AI[Application Insights]
+graph LR
+    U[Visitors] -->|HTTPS| IP[Static public IP]
+    subgraph VNet
+        subgraph AKS["AKS: 3 Cobalt nodes, Azure Linux"]
+            GW[public-gateway] --> APP[lamp-app x2]
+            FLUX[Flux]
+            CM[cert-manager]
         end
-        
-        subgraph "Identity & Security"
-            MI[Managed Identity]
-            RA[Role Assignment]
-        end
-        
-        subgraph "Container Platform"
-            ACR[Container Registry]
-            WH[Webhook]
-        end
-        
-        subgraph "Compute"
-            ASP[App Service Plan]
-            APP[App Service]
-        end
+        PG[(PostgreSQL<br/>private)]
     end
-    
-    MI -->|AcrPull| ACR
-    APP -->|Uses| MI
-    APP -->|Logs to| LA
-    APP -->|Telemetry| AI
-    ACR -->|Triggers| WH
-    WH -->|Deploys to| APP
+    IP --> GW
+    APP -->|Entra token| PG
+    FLUX -->|pulls| ACR[Container Registry]
+    CI[GitHub Actions] -->|pushes| ACR
+    AKS -.->|metrics, logs| MON[Azure Monitor]
+    SCHED[Logic Apps] -.->|start / stop| AKS
 ```
 
-### 📦 Module Breakdown
+| Module | What it creates |
+| --- | --- |
+| `network/network.bicep` | Virtual network, a subnet delegated to PostgreSQL, its private DNS zone, and the static public IP (with a DNS name) the site is served on |
+| `compute/aks.bicep` | The cluster, its role assignments, workload identity federation, and the Flux extension and configuration |
+| `compute/schedule.bicep` | Two Logic Apps that start the cluster in the morning and stop it in the evening |
+| `database/postgresql.bicep` | PostgreSQL flexible server: private, Entra sign-in only |
+| `container/acr.bicep` | Container registry for the app image and the manifest bundle |
+| `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs |
+| `security/managed-identity.bicep` | Used three times: the control plane, the lamp pods, and Flux each get their own identity |
 
-| Module | Resources | Purpose | Dependencies |
-|--------|-----------|---------|--------------|
-| **🔍 Monitoring** | Log Analytics, App Insights | Observability & logging | None |
-| **🔐 Identity** | User-Assigned Identity | Secure authentication | None |
-| **📦 Container Registry** | ACR | Image storage | None |
-| **🌐 App Service** | Plan, Web App, Diagnostics | Application hosting | Identity, Monitoring, ACR |
-| **🔗 Integration** | Role assignment, Webhook | ACR ↔ App Service connection | All above |
+**The cluster**
 
----
+- Kubernetes 1.36 (the newest generally available), patch releases and node images applied automatically on Sundays
+- Three `Standard_D2pds_v6` nodes: Arm64 Cobalt 100 processors, 2 vCPU and 8 GB each, one per availability zone
+- Azure Linux 3 with ephemeral OS disks (the OS lives on the VM's own NVMe disk)
+- Azure CNI Overlay with the Cilium dataplane and network policy
+- Entra ID sign-in with Azure RBAC; local accounts are disabled
 
-## 🚀 Quick Start
+**No passwords anywhere.** The lamp pods sign in to PostgreSQL with Microsoft Entra Workload ID. Flux and the nodes pull from the registry with managed identities. CI pushes with GitHub's OIDC federation. There is no Key Vault because there is nothing to put in one.
 
-### Prerequisites
-```bash
-# Install Azure CLI
-az --version
+## 🧭 Where things are in the cluster
 
-# Install Bicep CLI
-az bicep version
+| Looking for | Namespace | Name | Defined in |
+| --- | --- | --- | --- |
+| The application's pods | `lamp` | `lamp-app-…` | `k8s/app/lamp-app.yaml` |
+| The gateway's proxy pods, which carry the traffic | `envoy-gateway-system` | `public-gateway-…` | `k8s/app/public-gateway.yaml` |
+| The Gateway object and its TLS certificate | `gateway` | `public-gateway`, `lamp-tls` | `k8s/app/public-gateway.yaml` |
+| The gateway controller, which carries no traffic | `envoy-gateway-system` | `envoy-gateway-…` | `k8s/infrastructure/gateway-controller.yaml` |
+| cert-manager | `cert-manager` | `cert-manager-…` | `k8s/infrastructure/cert-manager.yaml` |
+| Flux | `flux-system` | `source-controller-…` and friends | The AKS extension, in `infra/modules/compute/aks.bicep` |
 
-# Login to Azure
-az login
-```
+## 🔄 How a change reaches the cluster
 
-### 1️⃣ Deploy Infrastructure
-```bash
-# Navigate to infrastructure directory
-cd infra
+1. A pull request merges to `main`. The **Tests** job runs.
+2. The **Publish** job builds the Arm64 image and pushes it to the registry, tagged with the commit.
+3. The same job pushes the `k8s/` folder as an OCI artifact, with that image tag written in, and moves the `latest` tag to it.
+4. Flux, inside the cluster, sees the new artifact within a minute and applies it. `k8s/infrastructure` (the gateway controller and cert-manager) goes first, then `k8s/app` (the public gateway and the application).
 
-# Preview deployment (What-If)
-az deployment sub create \
-  --location eastus2 \
-  --template-file main.bicep \
-  --parameters main.bicepparam \
-  --what-if
+Nothing outside the cluster ever holds credentials for it. Values that differ per deployment (host name, identity, database address) are handed to Flux by Bicep as `manifestValues` and replace the `${PLACEHOLDERS}` in `k8s/app`.
 
-# Deploy infrastructure
-az deployment sub create \
-  --location eastus2 \
-  --template-file main.bicep \
-  --parameters main.bicepparam
-```
+## 💰 What it costs
 
-### 2️⃣ Build & Deploy Application
-```bash
-# Build and push container image
-az acr build --registry <acr-name> --image lamp-app:latest .
+Prices are West US 3, October 2026.
 
-# App automatically deploys via webhook! 🎉
-```
+| Item | Monthly |
+| --- | --- |
+| Three nodes, 8 hours a day ($0.0918/hour each) | $67 |
+| Load balancer | $18 |
+| PostgreSQL B1ms + 32 GB | $16 |
+| Two public IPs (site, outbound) | $7 |
+| Container registry (Basic) | $5 |
+| Prometheus ingestion (estimate) | $5 |
+| Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
+| **Total** | **about $120** |
 
----
+- **The schedule is what makes this fit.** Three nodes around the clock would be $201 for nodes alone. The cluster runs 09:00-17:00 US Eastern; change `clusterStartTime`, `clusterStopTime` or `scheduleTimeZone` in `main.bicepparam` and redeploy. Each extra hour a day adds about $8 a month. The site is offline while the cluster is stopped.
+- **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month.
+- **One charge to check on your first bill.** Azure's price list gained an AKS "free tier infrastructure" meter of $0.05/hour dated 2026-10-01 that the documentation does not describe. If it applies it adds up to $36 a month.
+- **Spot nodes are not an option here.** Visual Studio (MSDN) subscriptions cannot create spot VMs. On a pay-as-you-go subscription the same node costs $0.017/hour as spot.
 
-## 🔧 Configuration
+## 🚀 Deploying
 
-### Environment Parameters
+**Once, in the GitHub repository settings**
 
-The `main.bicepparam` file contains all deployment parameters:
+- Secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`: an app registration with a federated credential for this repository's `main` branch, holding Contributor and User Access Administrator on the subscription.
+- Variable `AKS_ADMIN_OBJECT_ID`: your Entra object ID (`az ad signed-in-user show --query id -o tsv`). Without it nobody is granted `kubectl` access.
 
-```bicep
-// Environment Configuration
-param environmentName = 'dev'           // dev, staging, prod
-param location = 'eastus2'              // Azure region
-param resourceGroupName = 'rg-lamp-web-app-dev'
+**Then** run the **Deploy Azure Infrastructure** workflow. It provisions everything (about 20 minutes the first time, 10 after that) and starts the Tests workflow, whose Publish job gives the new cluster something to run. The site's address is the `lampUrl` output.
 
-// App Service Configuration  
-param appServicePlanSku = 'B1'          // B1, S1, P1v3, etc.
-param appPort = '8000'                  // Application port
+To deploy from your own machine instead: `azd env set AKS_ADMIN_OBJECT_ID <id>`, `azd provision`, then run the Tests workflow from the Actions tab.
 
-// Container Registry
-param containerRegistrySku = 'Basic'    // Basic, Standard, Premium
-```
+The PostgreSQL step sometimes fails claiming the virtual network or its subnet "doesn't exist", moments after Azure has created them. Running the deployment again gets past it, and the workflow retries by itself.
 
-### 🌍 Multiple Environments
+**Region.** `westus3` is the default because credit subscriptions are refused PostgreSQL flexible servers in several regions, East US 2 among them. `az postgres flexible-server list-skus -l <region>` shows whether a region is open to you.
 
-Create environment-specific parameter files:
+## 🧰 Day to day
 
 ```bash
-# Development
-main.bicepparam
+# kubectl access. Upgrade kubelogin first (brew upgrade kubelogin): releases from 2022
+# empty your existing ~/.kube/config when they convert a kubeconfig.
+az aks get-credentials --resource-group rg-lamp-web-app-dev --name <cluster>
+kubelogin convert-kubeconfig -l azurecli
 
-# Staging  
-staging.bicepparam
+# What is Flux doing?
+kubectl get kustomizations,ocirepositories,helmreleases -n flux-system
 
-# Production
-production.bicepparam
+# The app
+kubectl -n lamp get pods -o wide
+kubectl -n lamp logs -l app=lamp-app -f
+
+# The gateway: its status and address, then the proxies behind it
+kubectl -n gateway get gateway public-gateway
+kubectl -n envoy-gateway-system get pods -l gateway.envoyproxy.io/owning-gateway-name=public-gateway
+
+# Keep the cluster up late, or bring it up early
+az aks start --resource-group rg-lamp-web-app-dev --name <cluster>
+az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 ```
 
----
+**Metrics.** In the portal, open the cluster and choose **Monitoring > Dashboards with Grafana**, or query the Azure Monitor workspace with PromQL.
 
-## 🔒 Security Features
+**Logs.** In the portal, open the cluster and choose **Monitoring > Logs**, then query with KQL:
 
-### ✅ Identity & Access Management
-- **User-assigned managed identity** for predictable security
-- **Least privilege access** (AcrPull role only)
-- **No stored credentials** or connection strings
-
-### ✅ Network Security
-- **HTTPS-only** enforcement
-- **Secure webhook** configuration
-- **Private container registry** access
-
-### ✅ Monitoring & Compliance
-- **Comprehensive logging** to Log Analytics
-- **Application telemetry** via App Insights
-- **Diagnostic settings** for all resources
-
----
-
-## 📊 Monitoring
-
-### Built-in Observability
-
-| Component | Purpose | Access |
-|-----------|---------|--------|
-| **📈 Application Insights** | Performance, errors, usage | Azure Portal → App Insights |
-| **📋 Log Analytics** | Centralized logging | Azure Portal → Log Analytics |
-| **🔍 App Service Logs** | HTTP, console, app logs | Azure Portal → App Service → Logs |
-
-### Key Metrics Tracked
-- Application performance
-- Error rates and exceptions  
-- HTTP request patterns
-- Resource utilization
-
----
-
-## 🔄 CI/CD Integration
-
-### Automatic Deployment Flow
-
-1. **Code Push** → GitHub/Azure DevOps
-2. **Container Build** → Azure Container Registry
-3. **Image Push** → Triggers ACR webhook
-4. **Auto Deploy** → App Service pulls latest image
-5. **Monitoring** → Telemetry flows to App Insights
-
-### GitHub Actions Example
-```yaml
-- name: Build and Push to ACR
-  run: |
-    az acr build \
-      --registry ${{ env.ACR_NAME }} \
-      --image lamp-app:${{ github.sha }} \
-      .
+```kusto
+ContainerLogV2
+| where PodNamespace == "lamp"
+| project TimeGenerated, PodName, LogMessage
+| order by TimeGenerated desc
 ```
 
----
+Redeploying the Bicep needs the cluster running; the workflow starts it if the schedule has it stopped.
 
-## 📁 Project Structure
-```
-infra/
-├── 📄 main.bicep                    # 🎯 Main orchestration template
-├── ⚙️ main.bicepparam              # 🔧 Modern parameter file
-├── 🔧 bicepconfig.json             # 📋 Bicep linting configuration
-├── 📖 README.md                    # 📚 This documentation
-└── 📁 modules/
-    ├── 🔍 monitoring.bicep         # Log Analytics + App Insights
-    ├── 🔐 managed-identity.bicep   # User-assigned identity
-    ├── 📦 acr.bicep               # Container registry
-    ├── 🌐 appservice.bicep        # App Service plan + web app
-    └── 🔗 acr-integration.bicep   # Role assignment + webhook
-```
+**What a start looks like.** Stopping the cluster discards its nodes, so each morning three new ones boot and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
 
----
+## ⚖️ Checked against Microsoft's guidance
 
-## 🤝 Contributing
+The setup was compared with Microsoft's AKS best-practice articles ([reliability](https://learn.microsoft.com/azure/aks/best-practices-app-cluster-reliability), [cluster security](https://learn.microsoft.com/azure/aks/operator-best-practices-cluster-security), [networking](https://learn.microsoft.com/azure/aks/operator-best-practices-network), [workload identity](https://learn.microsoft.com/azure/aks/workload-identity-overview)).
 
-### Development Workflow
+**Followed**
 
-1. **🧪 Validate Changes**
-   ```bash
-   # Lint all Bicep files
-   bicep build main.bicep
-   
-   # Validate deployment
-   az deployment sub validate \
-     --location eastus2 \
-     --template-file main.bicep \
-     --parameters main.bicepparam
-   ```
+- Availability zones; ephemeral OS disks; no B-series VMs; Standard load balancer; Azure CNI Overlay
+- Entra ID with Kubernetes RBAC; automatic Kubernetes and node image upgrades inside a maintenance window
+- Workload identity through the service-account annotation and pod label, with no fixed credentials anywhere
+- CPU and memory requests and limits on every pod defined here; two replicas; PodDisruptionBudgets; a `preStop` hook; readiness, liveness and startup probes; topology spread constraints
+- Pods run as non-root with no privilege escalation; network policies restrict traffic and block the node metadata endpoint
+- Image tags are commit hashes, never `latest`; base images are kept current by Dependabot
+- Managed Prometheus and Container Insights
+- Flux with its default multi-tenancy lockdown
 
-2. **🔍 Test Modules**
-   ```bash
-   # Test individual modules
-   bicep build modules/monitoring.bicep
-   bicep build modules/acr.bicep
-   # ... etc
-   ```
+**Not followed, and why**
 
-3. **📊 Preview Changes**
-   ```bash
-   # Preview with What-If
-   az deployment sub create \
-     --location eastus2 \
-     --template-file main.bicep \
-     --parameters main.bicepparam \
-     --what-if
-   ```
+| Microsoft's guidance | Here | Why |
+| --- | --- | --- |
+| Standard tier, for the uptime SLA | Free tier | $73/month |
+| A dedicated system node pool of two or more nodes, plus a user pool | One pool of three nodes, shared | Separate pools need at least four nodes (two for the system pool, two so the app's replicas sit on different ones); the budget covers three |
+| Cluster autoscaler | A fixed node count | It makes the bill predictable under a spending limit. On two nodes it also kept adding and removing a third |
+| The application routing add-on's Gateway API implementation | Envoy Gateway, installed by Flux | Measured on a real cluster, the managed one reserves 1 vCPU and 4 GB for its control plane (this one: 25m). The CLI still labels it preview, and its proxies are rejected by the `restricted` pod security profile. `k8s/app` is plain Gateway API, so switching is a change of `gatewayClassName` |
+| Defender for Containers, and image vulnerability scanning | Neither | Defender is billed per vCPU. CodeQL and dependency review run in CI, but nothing scans the built image |
+| Azure Policy add-on | Pod Security Admission labels on the namespaces | It adds controllers of its own to nodes that are already nearly full after a start; the built-in admission control enforces the pod rules that matter here |
+| A web application firewall in front of ingress | None | Application Gateway for Containers and Front Door start at tens of dollars a month |
+| LocalDNS on node pools | Cluster DNS only | Not tried; it changes where pods send DNS queries, which the egress policy would have to allow |
+| Least privilege for the database | The app is the server's Entra administrator | A lesser role takes SQL run from inside the network, which Bicep cannot do |
+| Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
+| A NAT gateway for outbound traffic | The load balancer | $32/month |
 
-### Best Practices
+## 🎓 Things to practise on it
 
-- ✅ Always use `.bicepparam` files for parameters
-- ✅ Enable Bicep linting with `bicepconfig.json`
-- ✅ Follow naming conventions with resource tokens
-- ✅ Use managed identities over service principals
-- ✅ Tag all resources consistently
-- ✅ Validate before deploying
+- Add a second node pool with the cluster autoscaler and watch it react to a deployment that does not fit
+- Give the lamp a `/metrics` endpoint and a `PodMonitor`, then chart pulls per minute
+- Add a `HorizontalPodAutoscaler` and a load test
+- Drain a node (`kubectl drain`) and watch the PodDisruptionBudgets hold the site up
+- Replace the database administrator role with a least-privileged one
+- Move the gateway to the AKS-managed implementation and compare what each reserves
 
----
+## 🧹 Tearing down
 
-## 📚 Additional Resources
+Run the **Destroy Azure Infrastructure** workflow, or `az group delete --name rg-lamp-web-app-dev`. The cluster's node resource group goes with it.
 
-| Resource | Description |
-|----------|-------------|
-| [Azure Bicep Documentation](https://docs.microsoft.com/azure/azure-resource-manager/bicep/) | Official Bicep docs |
-| [Azure App Service](https://docs.microsoft.com/azure/app-service/) | App Service documentation |
-| [Azure Container Registry](https://docs.microsoft.com/azure/container-registry/) | ACR documentation |
-| [Azure Monitor](https://docs.microsoft.com/azure/azure-monitor/) | Monitoring and observability |
-
----
-
-<div align="center">
-
-**🎉 Happy Deploying! 🚀**
-
-Built with ❤️ using Azure Bicep
-
-</div>
+Let's Encrypt issues at most five certificates a week for the same host name, so a cluster rebuilt more often than that will serve an untrusted certificate until the limit resets.

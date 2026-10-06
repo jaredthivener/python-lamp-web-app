@@ -1,0 +1,18 @@
+# The lamp application and the public gateway in front of it.
+#
+# Placeholders written ${LIKE_THIS} are filled in by Flux from values the Bicep
+# deployment hands it (manifestValues in infra/main.bicep), so nothing here names a
+# particular subscription, registry or host.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - priority-class.yaml
+  - public-gateway.yaml
+  - lamp-app.yaml
+images:
+  # CI rewrites this entry to the image it just pushed, tagged with the commit, before
+  # it publishes this folder as the bundle Flux applies.
+  - name: lamp-app
+    newName: registry.invalid/lamp-app
+    newTag: unpublished

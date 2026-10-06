@@ -1,19 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
+# `azd provision` creates everything in infra/. There are no services for azd to deploy:
+# the cluster pulls the app itself (Flux), from what CI publishes on every merge to main.
 name: python-lamp-web-app
 metadata:
   template: python-lamp-web-app@0.0.1-beta
-services:
-  api:
-    project: src
-    language: python
-    host: appservice
-
-hooks:
-  postprovision:
-    shell: sh
-    run: echo "Infrastructure provisioned successfully"
-    continueOnError: false
 
 infra:
   provider: bicep

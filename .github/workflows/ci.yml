@@ -57,3 +57,66 @@ jobs:
             -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/postgres lamp
           curl --fail --silent --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8000/health \
             | grep '"database":"postgresql"' || { docker logs lamp; exit 1; }
+
+  # Everything that lands on main, once its tests have passed, is published for the
+  # cluster: the image, and the k8s/ folder as a bundle with that image's tag written in.
+  # Flux, running in the cluster, notices the new bundle and applies it. Nothing here
+  # talks to Kubernetes.
+  publish:
+    name: Publish
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm # the cluster's nodes are Arm64, so the image is built on Arm64
+    permissions:
+      contents: read
+      id-token: write # lets the job prove to Azure which repository and branch it is: no stored password
+    env:
+      RESOURCE_GROUP: rg-lamp-web-app-dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the registry
+        id: registry
+        run: |
+          name=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv 2>/dev/null || true)
+          if [ -z "$name" ]; then
+            echo "::notice::Nothing was published: there is no registry in $RESOURCE_GROUP. Run the Deploy Azure Infrastructure workflow first."
+          fi
+          echo "server=${name:+$name.azurecr.io}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the image
+        if: steps.registry.outputs.server != ''
+        env:
+          REGISTRY: ${{ steps.registry.outputs.server }}
+          IMAGE: ${{ steps.registry.outputs.server }}/lamp-app:${{ github.sha }}
+        run: |
+          az acr login --name "$REGISTRY"
+          docker build --tag "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Install the Flux CLI
+        if: steps.registry.outputs.server != ''
+        uses: fluxcd/flux2/action@v2.9.6
+
+      - name: Publish the manifests
+        if: steps.registry.outputs.server != ''
+        env:
+          REGISTRY: ${{ steps.registry.outputs.server }}
+        run: |
+          # Point the bundle at the image built above
+          sed -i "s|registry.invalid/lamp-app|$REGISTRY/lamp-app|; s|newTag: unpublished|newTag: $GITHUB_SHA|" k8s/app/kustomization.yaml
+          grep -q "newTag: $GITHUB_SHA" k8s/app/kustomization.yaml
+
+          flux push artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --path k8s \
+            --source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --revision "main@sha1:$GITHUB_SHA"
+          # "latest" is the tag the cluster follows
+          flux tag artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --tag latest
