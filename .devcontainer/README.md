@@ -4,7 +4,7 @@ This project includes a complete development container setup for Visual Studio C
 
 ## Features
 
-- **Python 3.13** with FastAPI and all project dependencies
+- **Python 3.14** with FastAPI and all project dependencies
 - **uv package manager** for faster Python package installation and management
 - **PostgreSQL 15** database for local development
 - **Azure CLI** for Azure resource management

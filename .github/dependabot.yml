@@ -71,7 +71,7 @@ updates:
           - "*"
     rebase-strategy: "auto"
 
-  # Docker dependencies (if you add a Dockerfile later)
+  # Docker base image: the two FROM lines in the Dockerfile
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -83,3 +83,11 @@ updates:
       prefix: "docker"
       include: "scope"
     rebase-strategy: "auto"
+    ignore:
+      # Patch releases and rebuilt images merge themselves. A new minor (3.15) is a change to
+      # .python-version, pyproject.toml and the site-packages path in the Dockerfile as well,
+      # so it is done by hand.
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"

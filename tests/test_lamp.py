@@ -6,6 +6,7 @@ import asyncio
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,7 +24,8 @@ def store(tmp_path):
     # CI sets TEST_DATABASE_URL to repeat every check against a real Postgres.
     engine = create_engine(os.getenv("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'lamp.db'}"))
     metadata.drop_all(engine)
-    return Store(engine)
+    yield Store(engine)
+    engine.dispose()
 
 
 @pytest.fixture
@@ -74,7 +76,7 @@ def test_concurrent_pulls_never_lose_a_flip(store):
 
 def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     path = tmp_path / "deployed.db"
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db:
         db.executescript("""
             CREATE TABLE lamp_status (
                 id INTEGER PRIMARY KEY, is_on BOOLEAN NOT NULL DEFAULT FALSE,
@@ -92,6 +94,7 @@ def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     before = store.snapshot()
     assert (before.is_on, before.lifetime, before.today) == (True, 1, 1)
     assert store.toggle().is_on is False
+    store.engine.dispose()
 
 
 def test_every_open_stream_hears_a_toggle(store):

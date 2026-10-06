@@ -16,11 +16,9 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 # The only dependency list: the Docker image and the dev container both install from here.
 dependencies = [
     "fastapi==0.142.2",
@@ -58,7 +56,7 @@ group = "dev"
 inherit = ["default"]
 
 [tool.black]
-target-version = ['py312']
+target-version = ['py314']
 line-length = 88
 include = '\.pyi?$'
 extend-exclude = '''
@@ -76,7 +74,7 @@ extend-exclude = '''
 '''
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true

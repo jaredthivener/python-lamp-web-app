@@ -39,11 +39,21 @@ jobs:
       - name: Run lamp physics tests
         run: npm test
 
-      # Same Python as the production image (see Dockerfile)
+      # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite
-        run: uv run --python 3.14 pytest
+        run: uv run pytest
 
       - name: Run tests on Postgres
-        run: uv run --python 3.14 pytest
+        run: uv run pytest
         env:
           TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/postgres
+
+      # The tests above run on a bare Python. This is the image that ships, so a base image
+      # update from Dependabot only merges if the result starts and reaches the database.
+      - name: Build the image and check it serves
+        run: |
+          docker build -t lamp .
+          docker run -d --name lamp --network host \
+            -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/postgres lamp
+          curl --fail --silent --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8000/health \
+            | grep '"database":"postgresql"' || { docker logs lamp; exit 1; }
