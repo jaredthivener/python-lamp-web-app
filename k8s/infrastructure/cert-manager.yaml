@@ -5,13 +5,18 @@ metadata:
   name: cert-manager
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
-  name: jetstack
+  name: cert-manager
   namespace: flux-system
 spec:
   interval: 12h
-  url: https://charts.jetstack.io
+  url: oci://quay.io/jetstack/charts/cert-manager
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    semver: "1.x" # new 1.x releases are picked up at the next interval
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -19,30 +24,28 @@ metadata:
   name: cert-manager
   namespace: flux-system
 spec:
-  interval: 12h
+  interval: 30m # how often the release is checked for drift
   releaseName: cert-manager
   targetNamespace: cert-manager
   # cert-manager only watches Gateways if the Gateway API definitions exist when it starts
   dependsOn:
     - name: envoy-gateway
-  chart:
-    spec:
-      chart: cert-manager
-      version: "1.x" # new 1.x releases are picked up at the next interval
-      sourceRef:
-        kind: HelmRepository
-        name: jetstack
+  chartRef:
+    kind: OCIRepository
+    name: cert-manager
+  # Put back anything in the release that someone changes by hand
+  driftDetection:
+    mode: enabled
+  # A failed upgrade is rolled back to the release that worked
   install:
-    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
-    crds: CreateReplace
     remediation:
       retries: 3
   values:
     crds:
-      enabled: true
+      enabled: true # the CRDs are part of the release, so upgrades update them
     config:
       apiVersion: controller.config.cert-manager.io/v1alpha1
       kind: ControllerConfiguration
