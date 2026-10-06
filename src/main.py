@@ -3,6 +3,7 @@ Lamp Web App: one lamp shared by everyone with the page open.
 
 Pulling the cord is a POST; every open page hears about it over Server-Sent Events.
 """
+
 import asyncio
 import logging
 import os
@@ -89,7 +90,7 @@ app = FastAPI(
     title="Lamp Web App",
     description="A lamp with a pull cord, shared live by everyone looking at it",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -108,7 +109,9 @@ async def current_snapshot() -> Snapshot:
             try:
                 hub.publish(await asyncio.to_thread(store.snapshot))
             except Exception as e:
-                logger.warning(f"Database unavailable, serving the last known lamp state: {e}")
+                logger.warning(
+                    f"Database unavailable, serving the last known lamp state: {e}"
+                )
     if hub.snapshot is None:
         raise HTTPException(status_code=503, detail="The lamp is unreachable right now")
     return hub.snapshot.model_copy(update={"viewers": hub.viewers})
@@ -179,8 +182,15 @@ class Frontend(StaticFiles):
 
 
 # Mounted last so the routes above win.
-app.mount("/", Frontend(directory=Path(__file__).parent / "static", html=True), name="static")
+app.mount(
+    "/", Frontend(directory=Path(__file__).parent / "static", html=True), name="static"
+)
 
 if __name__ == "__main__":
     # Open event streams never finish on their own; without the timeout a deploy would hang on them.
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")), timeout_graceful_shutdown=3)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        timeout_graceful_shutdown=3,
+    )

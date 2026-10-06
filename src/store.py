@@ -3,6 +3,7 @@ The lamp's state and activity log.
 
 Postgres in production; a local SQLite file when no connection string is configured.
 """
+
 import logging
 import os
 import re
@@ -47,12 +48,14 @@ lamp_activities = Table(
 
 class Activity(BaseModel):
     """One pull of the cord"""
+
     action: str  # 'on' or 'off'
     at: datetime
 
 
 class Snapshot(BaseModel):
     """Everything the page shows about the lamp"""
+
     is_on: bool
     changed_at: datetime
     today: int
@@ -80,7 +83,9 @@ def _postgres_dsn() -> Optional[str]:
 
     # App Service leaves the literal reference in place when it fails to resolve it:
     # @Microsoft.KeyVault(SecretUri=https://vault.vault.azure.net/secrets/secret-name/)
-    reference = re.match(r"@Microsoft\.KeyVault\(SecretUri=(https://[^/]+/)secrets/([^/)]+)", dsn)
+    reference = re.match(
+        r"@Microsoft\.KeyVault\(SecretUri=(https://[^/]+/)secrets/([^/)]+)", dsn
+    )
     if reference:
         vault_url, secret_name = reference.groups()
     elif dsn and not dsn.startswith("@Microsoft.KeyVault("):
@@ -102,7 +107,9 @@ def _create_engine() -> Engine:
             pool_pre_ping=True,
         )
     path = Path(tempfile.gettempdir()) / "lamp.db"
-    logger.warning("No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI set; using SQLite at %s", path)
+    logger.warning(
+        "No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI set; using SQLite at %s", path
+    )
     return create_engine(f"sqlite:///{path}")
 
 
@@ -121,8 +128,19 @@ class Store:
             if not self._ready:
                 metadata.create_all(engine)
                 with engine.begin() as conn:
-                    if conn.execute(select(lamp_status.c.id).where(lamp_status.c.id == 1)).first() is None:
-                        conn.execute(insert(lamp_status).values(id=1, is_on=False, last_updated=datetime.now(timezone.utc)))
+                    if (
+                        conn.execute(
+                            select(lamp_status.c.id).where(lamp_status.c.id == 1)
+                        ).first()
+                        is None
+                    ):
+                        conn.execute(
+                            insert(lamp_status).values(
+                                id=1,
+                                is_on=False,
+                                last_updated=datetime.now(timezone.utc),
+                            )
+                        )
                 self._engine, self._ready = engine, True
                 logger.info("Lamp storage ready (%s)", engine.dialect.name)
             return engine
@@ -133,8 +151,12 @@ class Store:
             conn.execute(select(1))
         return self.engine.dialect.name
 
-    def toggle(self, session_id: Optional[str] = None, user_agent: Optional[str] = None,
-               ip_address: Optional[str] = None) -> Snapshot:
+    def toggle(
+        self,
+        session_id: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> Snapshot:
         """Flip the lamp and record who did it, atomically"""
         now = datetime.now(timezone.utc)
         with self.engine.begin() as conn:
@@ -149,23 +171,29 @@ class Store:
                 )
                 .returning(lamp_status.c.is_on)
             ).scalar_one()
-            conn.execute(insert(lamp_activities).values(
-                action="on" if is_on else "off",
-                timestamp=now,
-                session_id=session_id,
-                user_agent=user_agent,
-                ip_address=ip_address,
-                previous_state="off" if is_on else "on",
-            ))
+            conn.execute(
+                insert(lamp_activities).values(
+                    action="on" if is_on else "off",
+                    timestamp=now,
+                    session_id=session_id,
+                    user_agent=user_agent,
+                    ip_address=ip_address,
+                    previous_state="off" if is_on else "on",
+                )
+            )
         return self.snapshot()
 
     def snapshot(self) -> Snapshot:
         """Read the lamp plus the counters shown beside it"""
-        midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         today = lamp_activities.c.timestamp >= midnight
         with self.engine.connect() as conn:
             is_on, changed_at = conn.execute(
-                select(lamp_status.c.is_on, lamp_status.c.last_updated).where(lamp_status.c.id == 1)
+                select(lamp_status.c.is_on, lamp_status.c.last_updated).where(
+                    lamp_status.c.id == 1
+                )
             ).one()
             # ponytail: counts scan lamp_activities on every toggle; index `timestamp` or
             # keep running counters once the table is large enough for that to show up.
