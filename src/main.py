@@ -7,7 +7,7 @@ import asyncio
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
@@ -63,12 +63,10 @@ class Hub:
                     sent = current
                     yield snapshot.model_copy(update={"viewers": self.viewers})
                     continue  # the lamp may have changed while that event was being written
-                try:
-                    # Streams only hold the latest state, so a slow client skips ahead instead of
-                    # queueing. The timeout is what picks up people arriving and leaving.
+                # Streams only hold the latest state, so a slow client skips ahead instead of
+                # queueing. Timing out is expected: it is what picks up people arriving and leaving.
+                with suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._changed.wait(), timeout=2)
-                except asyncio.TimeoutError:
-                    pass
         finally:
             self.viewers -= 1
 
