@@ -74,3 +74,6 @@ jobs:
         with:
           fail-on-severity: moderate
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+          # psycopg2 is LGPL, which is fine for a library the app only imports. Without this
+          # every psycopg2 update fails the licence check.
+          allow-dependencies-licenses: pkg:pypi/psycopg2-binary

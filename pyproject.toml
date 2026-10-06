@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "python-lamp-web-app"
 version = "0.1.0"
-description = "An enhanced interactive lamp web application with 3D animations and effects"
+description = "A lamp with a pull cord, shared live by everyone looking at it"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
@@ -18,31 +18,27 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 requires-python = ">=3.12"
+# The only dependency list: the Docker image and the dev container both install from here.
 dependencies = [
     "fastapi==0.142.2",
     "uvicorn[standard]==0.54.0",
-    "jinja2==3.1.6",
-    "python-multipart==0.0.32",
     "pydantic==2.13.5",
     # Database dependencies
-    "sqlalchemy==2.1.2",
+    "sqlalchemy==2.1.3",
     "psycopg2-binary==2.9.13",
-    "alembic==1.20.0",
     # Azure SDK for Key Vault
     "azure-identity==1.26.0",
-    "azure-keyvault-secrets==4.11.2",
-    # Additional utilities
-    "python-dotenv==1.2.4",
+    "azure-keyvault-secrets==4.11.3",
 ]
 
 # PEP 735 dependency groups (top-level, not under [project])
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "httpx>=0.24.0",
+    "httpx2>=1.0.0",  # FastAPI's TestClient
     "black>=23.0.0",
     "mypy>=1.5.0",
 ]
@@ -93,13 +89,8 @@ strict_equality = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
-asyncio_mode = "auto"
-rules = [
-    "auto",  # Auto-detect language and apply relevant rules
-    "security",
-    "python",
-]

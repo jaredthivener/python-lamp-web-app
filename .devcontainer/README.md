@@ -61,17 +61,14 @@ This project includes a complete development container setup for Visual Studio C
 This dev container uses [uv](https://docs.astral.sh/uv/) for faster Python package management:
 
 ```bash
-# Install project dependencies
-uv pip install -r requirements.txt
+# Install project and development dependencies (pyproject.toml is the only dependency list)
+uv pip install -r pyproject.toml --group dev
 
 # Install a new package
 uv pip install package-name
 
-# Install development dependencies
-uv pip install pytest black flake8 mypy
-
-# Sync dependencies (if using pyproject.toml)
-uv pip sync requirements.txt
+# Run the tests
+pytest
 ```
 
 uv is significantly faster than pip and provides better dependency resolution.

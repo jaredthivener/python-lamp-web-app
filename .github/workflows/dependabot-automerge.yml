@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+# Every Dependabot pull request is set to merge itself as soon as the required checks
+# pass (the "Tests" check, enforced by the ruleset on main). Nobody approves or clicks.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  automerge:
+    name: Enable auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      # GitHub never lets the built-in token merge a change to a workflow file. Updates to
+      # the actions used in .github/workflows therefore need a token of your own, saved as
+      # the DEPENDABOT_MERGE_TOKEN secret: fine-grained, this repository only, with
+      # Contents, Pull requests and Workflows set to "Read and write".
+      MERGE_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN }}
+      TOUCHES_WORKFLOWS: ${{ startsWith(github.event.pull_request.head.ref, 'dependabot/github_actions/') }}
+    steps:
+      - name: Merge once the required checks pass
+        if: env.MERGE_TOKEN != '' || env.TOUCHES_WORKFLOWS == 'false'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Explain why this one is waiting
+        if: env.MERGE_TOKEN == '' && env.TOUCHES_WORKFLOWS == 'true'
+        run: echo "::notice::This update changes workflow files, which the built-in token is not allowed to merge. Add the DEPENDABOT_MERGE_TOKEN secret (see the comments in this workflow) and these merge themselves too. Until then, merge this one by hand."

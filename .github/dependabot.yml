@@ -9,8 +9,8 @@ updates:
       time: "12:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 10
-    assignees:
-      - "jaredthivener"
+    # No assignees: these merge themselves (see workflows/dependabot-automerge.yml), and
+    # being assigned is what sends an email for every one of them.
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"
@@ -28,8 +28,6 @@ updates:
           - "starlette*"
       web-dependencies:
         patterns:
-          - "jinja2*"
-          - "python-multipart*"
           - "pydantic*"
       async-dependencies:
         patterns:
@@ -39,7 +37,6 @@ updates:
       development-dependencies:
         patterns:
           - "pytest*"
-          - "pytest-asyncio*"
           - "black*"
           - "mypy*"
           - "httpx*"
@@ -62,8 +59,6 @@ updates:
       time: "09:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 5
-    assignees:
-      - "jaredthivener"
     commit-message:
       prefix: "ci"
       include: "scope"

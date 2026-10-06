@@ -1,5 +1,6 @@
 # 🪔 Interactive Lamp Web App
 
+[![Tests](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/ci.yml/badge.svg)](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/ci.yml)
 [![Github CodeQL](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml/badge.svg)](https://github.com/jaredthivener/python-lamp-web-app/actions/workflows/security-native.yml)
 
 > **Modern containerized Python web application with production-ready Azure infrastructure**
@@ -26,10 +27,13 @@ A beautiful, interactive hanging lamp web application built with FastAPI, featur
 
 ### 🎨 **Interactive Experience**
 
-- **Dynamic Lamp Control**: Pull the string to toggle the lamp on/off with realistic physics
-- **Smooth Animations**: Fluid transitions using Anime.js for professional feel
+- **One Shared Lamp**: Everyone with the page open sees the same lamp. Pull the cord and it switches for all of them, live, over Server-Sent Events
+- **Light You Can Read By**: The page is a wall and the lamp really lights it. A WebGL shader computes the falloff, the shade's cutoff, dust in the beam, and the shadows the stat cards cast
+- **Writing That Leaves**: A few seconds after the page opens, the words on the wall turn to ash and a gust carries them off
+- **Real Physics**: The lamp hangs from a cord and rocks where the cord meets it; the ball chain is a rope. Pull the chain and the shade dips toward your hand, then sways back to rest
+- **No Frontend Dependencies**: No framework, no CDN, no build step. A few ES modules, a stylesheet and two short recordings
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
-- **Accessibility**: Full keyboard navigation and screen reader support
+- **Accessibility**: The cord is a real button (Tab, Enter, Space, or the `L` key); reduced-motion and forced-colors are respected, with a plain fallback where WebGL is unavailable
 
 ### 🏗️ **Architecture**
 
@@ -125,12 +129,15 @@ chmod +x start.sh
 # Quick start with auto-setup
 ./start.sh
 
-# Or manual setup
-python3 -m venv venv
-source venv/bin/activate
-pip install -r src/requirements.txt
-python3 src/main.py
+# Or run it directly (uv creates the environment from pyproject.toml)
+uv run python src/main.py
+
+# Run the tests
+uv run pytest   # API and storage
+npm test        # lamp physics (plain Node, nothing to install)
 ```
+
+With no `POSTGRES_CONNECTION_STRING` or `KEY_VAULT_URI` set, the lamp is kept in a local SQLite file, so there is nothing else to install.
 
 ### 3️⃣ **Deploy to Azure**
 
@@ -243,14 +250,19 @@ az acr build --registry <acr-name> --image lamp-app:latest .
 ```
 python-lamp-web-app/
 ├── 📁 src/                      # 🐍  Python application
-│   ├── main.py                  # 🚀  FastAPI entry point
-│   ├── server.py                # ⚙️  Server configuration
-│   ├── requirements.txt         # 📦  Python dependencies
-│   ├── 📁 static/               # 🎨  Frontend assets
-│   │   ├── style.css            # 💅  Application styles
-│   │   └── script.js            # ⚡  Interactive functionality
-│   └── 📁 templates/            # 📄  Jinja2 templates
-│       └── index.html           # 🏠  Main UI template
+│   ├── main.py                  # 🚀  FastAPI app: API, live event stream, static files
+│   ├── store.py                 # 🗄️  Lamp state and activity log (SQLAlchemy)
+│   └── 📁 static/               # 🎨  Frontend (served as-is, no build step)
+│       ├── index.html           # 🏠  The page
+│       ├── ash.js               # 🌬️  The words on the wall blowing away as ash
+│       ├── style.css            # 💅  Layout and type
+│       ├── lamp.js              # ⚡  Input, server sync, frame loop
+│       ├── physics.js           # 🪀  How the lamp and chain move (tuning constants at the top)
+│       ├── scene.js             # 💡  WebGL shader that draws the lamp and its light
+│       ├── sound.js             # 🔔  Plays the pull chain
+│       └── chain-*.wav          # 🎙️  A real pull chain, recorded (see Credits)
+├── 📁 tests/                    # 🧪  pytest (SQLite locally, plus Postgres in CI) and Node physics tests
+├── pyproject.toml               # 📦  The only dependency list
 ├── 📁 infra/                    # ☁️  Azure infrastructure
 │   ├── main.bicep               # 🎯  Main Bicep template
 │   ├── main.bicepparam          # 🔧  Parameters
@@ -260,6 +272,17 @@ python-lamp-web-app/
 ├── ☁️ deploy-to-azure.sh        # ⚡  Azure deployment
 └── 📖 README.md                 # 📚  This documentation
 ```
+
+### 🔌 **API**
+
+| Endpoint                   | Purpose                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `GET /api/v1/lamp/status`  | Lamp state plus counters (today, lifetime, visitors, people watching)   |
+| `POST /api/v1/lamp/toggle` | Pull the cord. Atomic in the database; at most two per second, lamp-wide |
+| `GET /api/v1/lamp/events`  | Server-Sent Events: the same snapshot, pushed whenever it changes       |
+| `GET /health`              | Liveness for Docker and App Service; reports a lost database as degraded |
+
+State lives in Postgres (`lamp_status`, `lamp_activities`). If the database goes away the page keeps showing the last known state and pulls fail loudly rather than being silently dropped; it reconnects on its own.
 
 ### 🛠️ **Development Workflow**
 
@@ -460,15 +483,16 @@ az monitor log-analytics query \
 
 ### Backend Stack
 
-- **🐍 FastAPI** - Modern Python web framework
+- **🐍 FastAPI** - Modern Python web framework, with Server-Sent Events for live updates
 - **🚀 Uvicorn** - ASGI server for production
+- **🗄️ SQLAlchemy + PostgreSQL** - Lamp state and activity log
 - **🐳 Docker** - Containerization
 - **☁️ Azure App Service** - Cloud hosting
 
 ### Frontend Stack
 
-- **🎨 Vanilla JavaScript** - Interactive functionality
-- **✨ Anime.js** - Smooth animations
+- **🎨 Vanilla JavaScript** - ES modules, no dependencies, no build step
+- **💡 WebGL 2** - One fragment shader for the lamp and its light
 - **🎨 CSS3** - Modern styling
 - **📱 Responsive Design** - Mobile-first approach
 
@@ -478,6 +502,12 @@ az monitor log-analytics query \
 - **🔐 Managed Identity** - Secure authentication
 - **📦 Azure Container Registry** - Private image registry
 - **📊 Application Insights** - APM & monitoring
+
+---
+
+## 🎙️ Credits
+
+The pull-chain sound is cut from ["Desk Lamp - Chain Pull (Fast)"](https://freesound.org/s/541762/) by PhillipArthurSimmons on Freesound, released into the public domain (CC0).
 
 ---
 
