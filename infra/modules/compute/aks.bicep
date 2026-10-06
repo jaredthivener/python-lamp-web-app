@@ -378,6 +378,9 @@ resource flux 'Microsoft.KubernetesConfiguration/extensions@2025-03-01' = {
       'workloadIdentity.enable': 'true'
       'workloadIdentity.azureClientId': fluxIdentity.properties.clientId
       'workloadIdentity.azureTenantId': tenant().tenantId
+      // A ${PLACEHOLDER} in the manifests that manifestValues does not fill stops the
+      // rollout. Flux's default is to put an empty string there and carry on.
+      'kustomize-controller.strict-substitution-mode': 'true'
     }
   }
 }
@@ -407,6 +410,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
         prune: true
         wait: true
         timeoutInSeconds: 600
+        retryIntervalInSeconds: 120 // after a failure; the default waits ten minutes
       }
       app: {
         path: './app'
@@ -414,6 +418,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
         prune: true
         wait: true
         timeoutInSeconds: 600
+        retryIntervalInSeconds: 120
         postBuild: {
           substitute: manifestValues
         }
