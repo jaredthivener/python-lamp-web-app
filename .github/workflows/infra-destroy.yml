@@ -40,5 +40,19 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Deleting the group only soft-deletes its Log Analytics workspace: Azure keeps it
+      # for 14 days, and a deployment within that time gets the old workspace back
+      # instead of a new one. For its first minutes the recovered workspace has no
+      # container tables, and the deployment fails creating the log collection rule.
+      # Microsoft's guidance for environments that are deployed repeatedly under the
+      # same name is to delete the workspace permanently:
+      # https://learn.microsoft.com/azure/azure-monitor/logs/delete-workspace#delete-a-workspace-permanently
+      - name: Delete the Log Analytics workspace permanently
+        run: |
+          group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
+          for workspace in $(az monitor log-analytics workspace list --resource-group "$group" --query "[].name" --output tsv); do
+            az monitor log-analytics workspace delete --resource-group "$group" --workspace-name "$workspace" --force --yes
+          done
+
       - name: Delete resource group
         run: az group delete --name rg-lamp-web-app-${{ env.AZURE_ENV_NAME }} --yes --no-wait

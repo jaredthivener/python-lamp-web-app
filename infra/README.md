@@ -225,6 +225,15 @@ Compared with Flux's recommended settings for [Kustomizations](https://fluxcd.io
 
 ## 🧹 Tearing down
 
-Run the **Destroy Azure Infrastructure** workflow, or `az group delete --name rg-lamp-web-app-dev`. The cluster's node resource group goes with it.
+Run the **Destroy Azure Infrastructure** workflow. The cluster's node resource group goes with the main one.
+
+By hand, delete the Log Analytics workspace permanently before the group:
+
+```bash
+az monitor log-analytics workspace delete --resource-group rg-lamp-web-app-dev --workspace-name <workspace> --force --yes
+az group delete --name rg-lamp-web-app-dev
+```
+
+Deleting the group alone only soft-deletes the workspace. Azure keeps it for 14 days, and a deployment within that time [recovers the old workspace](https://learn.microsoft.com/azure/azure-monitor/logs/delete-workspace) instead of creating one. For its first few minutes the recovered workspace has no container tables, so the deployment's first attempt fails with `InvalidOutputTable`; the workflow's retry gets past it.
 
 Let's Encrypt issues at most five certificates a week for the same host name, so a cluster rebuilt more often than that will serve an untrusted certificate until the limit resets.
