@@ -25,8 +25,9 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
   AZURE_DEV_COLLECT_TELEMETRY: "no"
-  # Who gets kubectl access. Without this it would be the workflow's own identity.
-  AKS_ADMIN_OBJECT_ID: ${{ vars.AKS_ADMIN_OBJECT_ID }}
+  # Who gets kubectl access. A secret, not a variable, only so that it is masked in
+  # the run logs, which are public.
+  AKS_ADMIN_OBJECT_ID: ${{ secrets.AKS_ADMIN_OBJECT_ID }}
 
 jobs:
   deploy-infrastructure:

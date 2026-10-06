@@ -14,7 +14,7 @@ param resourceGroupName = 'rg-lamp-web-app-dev'
 
 // Who may run kubectl against the cluster: your Entra object ID
 // (az ad signed-in-user show --query id -o tsv). The deploy workflow takes it from the
-// repository variable of the same name; for a local run, `azd env set AKS_ADMIN_OBJECT_ID <id>`.
+// repository secret of the same name; for a local run, `azd env set AKS_ADMIN_OBJECT_ID <id>`.
 // Left empty, nobody is granted access (an Owner can still assign the role later).
 param clusterAdminObjectId = readEnvironmentVariable('AKS_ADMIN_OBJECT_ID', '')
 
