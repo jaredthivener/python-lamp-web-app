@@ -1,0 +1,218 @@
+# The lamp application: the pods that serve the page and its API, and everything that
+# belongs to them. All of it is named lamp-app and lives in the lamp namespace.
+#
+# The identity the pods run as. The annotation names an Azure managed identity, and
+# Entra ID is told (in infra/modules/compute/aks.bicep) to accept a token Kubernetes
+# issues to this service account as proof of being it. That is Microsoft Entra
+# Workload ID: there is no secret to mount.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lamp-app
+  namespace: lamp
+  annotations:
+    azure.workload.identity/client-id: ${APP_IDENTITY_CLIENT_ID}
+automountServiceAccountToken: false # the app never calls the Kubernetes API
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lamp-app
+  namespace: lamp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lamp-app
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0 # a rollout adds a new pod before it takes an old one away
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: lamp-app
+        # Required for workload identity: AKS's webhook gives pods with this label the
+        # token and the AZURE_* settings the Azure SDK signs in with. Pods cannot be
+        # created while that webhook is unavailable (it fails closed, by design).
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: lamp-app
+      priorityClassName: serving
+      # One replica per node, so losing a node leaves the lamp lit.
+      # - minDomains makes the second replica wait for a second node instead of piling
+      #   onto the first, as it otherwise would each morning: the cluster starts one
+      #   node at a time.
+      # - matchLabelKeys counts only pods of the same rollout. Without it the outgoing
+      #   pods count too, and a rollout can finish with both new pods on one node.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 2
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: lamp-app
+          matchLabelKeys:
+            - pod-template-hash
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: lamp-app
+          image: lamp-app
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # No password in it: the pod's Azure identity signs in to Postgres
+            - name: POSTGRES_CONNECTION_STRING
+              value: "${POSTGRES_CONNECTION_STRING}"
+            # Only the gateway can reach these pods (see the NetworkPolicy below), so its
+            # X-Forwarded-For header is trusted for the visitor's address.
+            - name: FORWARDED_ALLOW_IPS
+              value: "*"
+          # /livez answers whenever the process can, and never waits on the database.
+          # With the database away the app serves the last lamp state it saw; a probe
+          # that failed then would have Kubernetes restart pods that are doing their job.
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              # Give the gateway a moment to stop sending requests here before the
+              # app is asked to exit. Open event streams then reconnect elsewhere.
+              sleep:
+                seconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lamp-app
+  namespace: lamp
+spec:
+  selector:
+    app: lamp-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Draining a node (an upgrade, the autoscaler removing it) may not take both replicas at once
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lamp-app
+  namespace: lamp
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: lamp-app
+---
+# Who may talk to the lamp-app pods, and what they may reach. Naming the pods in a
+# policy is what switches them from "allow all" to "deny unless listed".
+# - In: only the public gateway's proxies.
+# - Out: anything except the node's instance metadata endpoint, where a pod could
+#   otherwise ask for the node's own Azure identity.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lamp-app
+  namespace: lamp
+spec:
+  podSelector:
+    matchLabels:
+      app: lamp-app
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: envoy-gateway-system
+      ports:
+        - port: http
+  egress:
+    # Name lookups, answered by the cluster's DNS pods. An address range never matches
+    # other pods under Cilium, so they have to be named.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Everything outside the cluster (Postgres, Entra ID) except the metadata endpoint
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+---
+# The application's half of Gateway API: attach to the public gateway and send this
+# host's HTTPS traffic to lamp-app
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: lamp-app
+  namespace: lamp
+spec:
+  parentRefs:
+    - name: public-gateway
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - ${LAMP_HOST}
+  rules:
+    # The event stream stays open for as long as the page does. Without this the proxy
+    # ends every response at its default limit of 15 seconds.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/lamp/events
+      timeouts:
+        request: 0s
+      backendRefs:
+        - name: lamp-app
+          port: 80
+    - backendRefs:
+        - name: lamp-app
+          port: 80

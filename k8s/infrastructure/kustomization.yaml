@@ -1,0 +1,7 @@
+# Cluster add-ons the app's manifests depend on. Flux applies this folder first and
+# waits for it to be healthy before it touches k8s/app.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gateway-controller.yaml
+  - cert-manager.yaml

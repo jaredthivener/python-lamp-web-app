@@ -1,0 +1,141 @@
+# The public gateway: the way in from the internet.
+#
+# GatewayClass and Gateway are the cluster operator's half of Gateway API: which
+# controller serves traffic, where it enters and on what terms. Applications attach
+# with HTTPRoutes of their own (see lamp-app.yaml).
+#
+# What this creates in the cluster, all named public-gateway:
+#   namespace gateway               the Gateway itself and its TLS certificate
+#   namespace envoy-gateway-system  the Envoy proxy pods that carry the traffic, and
+#                                   the LoadBalancer Service in front of them
+# (The envoy-gateway pod in that namespace is the controller that manages them. It is
+# installed by k8s/infrastructure/gateway-controller.yaml and carries no traffic.)
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: public-gateway
+    namespace: envoy-gateway-system
+---
+# How Envoy Gateway runs the proxies for that class. Left to itself it names them
+# envoy-<gateway namespace>-<gateway name>-<hash>, which reads like the controller's
+# own name, so the names are set here.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: public-gateway
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        name: public-gateway
+        replicas: 2
+        pod:
+          priorityClassName: serving # see priority-class.yaml
+          # One proxy per node, for the same reason as the app's replicas (see lamp-app.yaml).
+          # The load balancer only sends traffic to nodes that have a proxy on them.
+          topologySpreadConstraints:
+            - maxSkew: 1
+              minDomains: 2
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  gateway.envoyproxy.io/owning-gateway-name: public-gateway
+                  gateway.envoyproxy.io/owning-gateway-namespace: gateway
+              matchLabelKeys:
+                - pod-template-hash
+        container:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      envoyPDB:
+        name: public-gateway
+        minAvailable: 1
+      envoyService:
+        name: public-gateway
+        annotations:
+          # Serve on the static address created by Bicep, so it survives cluster rebuilds
+          service.beta.kubernetes.io/azure-pip-name: ${PUBLIC_IP_NAME}
+          service.beta.kubernetes.io/azure-load-balancer-resource-group: ${PUBLIC_IP_RESOURCE_GROUP}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: public-gateway
+  namespace: gateway
+  annotations:
+    # cert-manager sees this, requests a certificate for the HTTPS listener's hostname
+    # and keeps the lamp-tls secret renewed.
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      hostname: ${LAMP_HOST}
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same # the redirect below, and cert-manager's challenge responses
+    - name: https
+      hostname: ${LAMP_HOST}
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: lamp-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: lamp
+---
+# Everything that arrives over plain HTTP is sent to HTTPS. cert-manager's challenge
+# route matches an exact path, which outranks this catch-all, so renewals still work.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: public-gateway
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account
+    solvers:
+      # HTTP-01: Let's Encrypt fetches a token over port 80 to prove the host is ours
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: public-gateway
+                namespace: gateway
+                kind: Gateway

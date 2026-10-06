@@ -1,0 +1,20 @@
+# Pod Security Admission is built into Kubernetes: a namespace label decides which
+# pods the API server will accept there. "restricted" is the strictest profile:
+# non-root, no privilege escalation, no added capabilities.
+# lamp: the application (lamp-app.yaml)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lamp
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+# gateway: the public Gateway and its TLS certificate (public-gateway.yaml). The only
+# pods that ever run here are cert-manager's short-lived challenge responders; the
+# gateway's proxy pods run in envoy-gateway-system.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

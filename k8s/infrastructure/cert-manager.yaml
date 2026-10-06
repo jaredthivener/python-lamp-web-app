@@ -1,0 +1,75 @@
+# cert-manager obtains and renews the site's TLS certificate from Let's Encrypt.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 12h
+  releaseName: cert-manager
+  targetNamespace: cert-manager
+  # cert-manager only watches Gateways if the Gateway API definitions exist when it starts
+  dependsOn:
+    - name: envoy-gateway
+  chart:
+    spec:
+      chart: cert-manager
+      version: "1.x" # new 1.x releases are picked up at the next interval
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    crds:
+      enabled: true
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true # answer ACME challenges through the Gateway, not an Ingress
+    # The chart sets no requests or limits. Small requests let the scheduler account for
+    # these pods without reserving much of a 2-vCPU node; limits keep any one of them
+    # from starving its neighbours.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    webhook:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+    cainjector:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
