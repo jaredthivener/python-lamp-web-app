@@ -2,23 +2,24 @@
 The lamp's state and activity log.
 
 Postgres in production; a local SQLite file when no connection string is configured.
+Everything replicas need to agree on lives here, so any number of them can run.
 """
 
 import logging
 import os
-import re
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import cache
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import psycopg2  # type: ignore[import-untyped]
 from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
+from psycopg2.extensions import parse_dsn  # type: ignore[import-untyped]
 from pydantic import BaseModel, computed_field
 from sqlalchemy import Boolean, Column, DateTime, Integer, MetaData, String, Table, Text
-from sqlalchemy import create_engine, func, insert, select, update
+from sqlalchemy import create_engine, delete, func, insert, select, true, update
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,18 @@ lamp_activities = Table(
     Column("ip_address", String(45)),
     Column("previous_state", String(10)),
 )
+# One row per running replica: how many event streams it has open, and when it last said so.
+lamp_viewers = Table(
+    "lamp_viewers",
+    metadata,
+    Column("replica", String(64), primary_key=True),
+    Column("viewers", Integer, nullable=False),
+    Column("seen_at", DateTime(timezone=True), nullable=False),
+)
+
+# A replica that has not reported for this long is gone, and its viewers with it.
+REPLICA_SILENCE = timedelta(seconds=5)
+ENTRA_POSTGRES_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
 
 
 class Activity(BaseModel):
@@ -70,46 +83,39 @@ class Snapshot(BaseModel):
         return "on" if self.is_on else "off"
 
 
+class TooSoon(Exception):
+    """The lamp was switched less than the cooldown ago, by anyone, on any replica"""
+
+
 def _utc(value: datetime) -> datetime:
     """SQLite hands back naive datetimes; everything stored here is UTC."""
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _postgres_dsn() -> Optional[str]:
-    """Return the Postgres connection string from the environment or Azure Key Vault"""
-    dsn = os.getenv("POSTGRES_CONNECTION_STRING", "")
-    vault_url = os.getenv("KEY_VAULT_URI")
-    secret_name = "postgresql-connection-string"
+@cache
+def _azure_identity() -> DefaultAzureCredential:
+    return DefaultAzureCredential()  # one instance, so the tokens it fetches are cached
 
-    # App Service leaves the literal reference in place when it fails to resolve it:
-    # @Microsoft.KeyVault(SecretUri=https://vault.vault.azure.net/secrets/secret-name/)
-    reference = re.match(
-        r"@Microsoft\.KeyVault\(SecretUri=(https://[^/]+/)secrets/([^/)]+)", dsn
-    )
-    if reference:
-        vault_url, secret_name = reference.groups()
-    elif dsn and not dsn.startswith("@Microsoft.KeyVault("):
-        return dsn
 
-    if not vault_url:
-        return None
-    client = SecretClient(vault_url=vault_url, credential=DefaultAzureCredential())
-    return client.get_secret(secret_name).value
+def _connect(dsn: str) -> Any:
+    """Open a Postgres connection. psycopg2 takes URLs and "host=... dbname=..." alike."""
+    params = parse_dsn(dsn)
+    azure = params.get("host", "").endswith(".postgres.database.azure.com")
+    if azure and "password" not in params:
+        # Passwordless: this process's Azure identity (the pod's workload identity on AKS)
+        # signs in with a short-lived token. Only new connections need one.
+        params["password"] = _azure_identity().get_token(ENTRA_POSTGRES_SCOPE).token
+    return psycopg2.connect(**{"connect_timeout": 5, **params})
 
 
 def _create_engine() -> Engine:
-    dsn = _postgres_dsn()
+    dsn = os.getenv("POSTGRES_CONNECTION_STRING")
     if dsn:
-        # psycopg2 takes the string verbatim, so URLs and "host=... dbname=..." both work.
         return create_engine(
-            "postgresql+psycopg2://",
-            creator=lambda: psycopg2.connect(dsn, connect_timeout=5),
-            pool_pre_ping=True,
+            "postgresql+psycopg2://", creator=lambda: _connect(dsn), pool_pre_ping=True
         )
     path = Path(tempfile.gettempdir()) / "lamp.db"
-    logger.warning(
-        "No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI set; using SQLite at %s", path
-    )
+    logger.warning("No POSTGRES_CONNECTION_STRING set; using SQLite at %s", path)
     return create_engine(f"sqlite:///{path}")
 
 
@@ -156,21 +162,29 @@ class Store:
         session_id: Optional[str] = None,
         user_agent: Optional[str] = None,
         ip_address: Optional[str] = None,
+        cooldown: timedelta = timedelta(0),
     ) -> Snapshot:
-        """Flip the lamp and record who did it, atomically"""
+        """
+        Flip the lamp and record who did it, atomically. Raises TooSoon if it was last
+        switched within the cooldown: the check is part of the same statement, so it
+        holds however many replicas are taking pulls.
+        """
         now = datetime.now(timezone.utc)
+        rested = lamp_status.c.last_updated <= now - cooldown if cooldown else true()
         with self.engine.begin() as conn:
             # One statement flips and reads back, so concurrent pulls can never both see "off".
             is_on = conn.execute(
                 update(lamp_status)
-                .where(lamp_status.c.id == 1)
+                .where(lamp_status.c.id == 1, rested)
                 .values(
                     is_on=~lamp_status.c.is_on,
                     last_updated=now,
                     client_info=f"Session: {session_id or 'unknown'}, IP: {ip_address or 'unknown'}",
                 )
                 .returning(lamp_status.c.is_on)
-            ).scalar_one()
+            ).scalar_one_or_none()
+            if is_on is None:
+                raise TooSoon
             conn.execute(
                 insert(lamp_activities).values(
                     action="on" if is_on else "off",
@@ -182,6 +196,42 @@ class Store:
                 )
             )
         return self.snapshot()
+
+    def pulse(self, replica: str, viewers: int) -> tuple[Optional[datetime], int]:
+        """
+        Report how many streams this replica has open. Returns when the lamp last changed
+        and how many streams are open across every replica still reporting.
+        """
+        now = datetime.now(timezone.utc)
+        mine = {"viewers": viewers, "seen_at": now}
+        own_row = lamp_viewers.c.replica == replica
+        with self.engine.begin() as conn:
+            if not conn.execute(
+                update(lamp_viewers).where(own_row).values(mine)
+            ).rowcount:
+                conn.execute(insert(lamp_viewers).values(replica=replica, **mine))
+            changed_at = conn.execute(
+                select(lamp_status.c.last_updated).where(lamp_status.c.id == 1)
+            ).scalar_one()
+            room = conn.execute(
+                select(func.coalesce(func.sum(lamp_viewers.c.viewers), 0)).where(
+                    lamp_viewers.c.seen_at > now - REPLICA_SILENCE
+                )
+            ).scalar_one()
+        return changed_at and _utc(changed_at), int(room)
+
+    def leave(self, replica: str) -> None:
+        """This replica is shutting down: stop counting its viewers now, not after the silence"""
+        long_gone = lamp_viewers.c.seen_at < datetime.now(timezone.utc) - timedelta(
+            days=1
+        )
+        with self.engine.begin() as conn:
+            # Replicas that died without leaving are swept up by the next one that does.
+            conn.execute(
+                delete(lamp_viewers).where(
+                    (lamp_viewers.c.replica == replica) | long_gone
+                )
+            )
 
     def snapshot(self) -> Snapshot:
         """Read the lamp plus the counters shown beside it"""

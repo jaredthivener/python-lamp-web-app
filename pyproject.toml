@@ -27,9 +27,8 @@ dependencies = [
     # Database dependencies
     "sqlalchemy==2.1.3",
     "psycopg2-binary==2.9.13",
-    # Azure SDK for Key Vault
+    # Signs in to Azure Postgres as the pod's identity, so there is no password to keep
     "azure-identity==1.26.0",
-    "azure-keyvault-secrets==4.11.3",
 ]
 
 # PEP 735 dependency groups (top-level, not under [project])

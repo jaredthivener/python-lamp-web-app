@@ -60,8 +60,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Nothing is installed at run time, and pip carries its own copies of libraries that fall behind
     && pip uninstall --yes --root-user-action=ignore pip
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser -s /bin/sh -m appuser
+# Create non-root user. The fixed ID is what lets Kubernetes verify runAsNonRoot: it
+# cannot tell from a name alone that the user is not root.
+RUN groupadd -r -g 10001 appuser && useradd -r -u 10001 -g appuser -s /bin/sh -m appuser
 
 # Working directory
 WORKDIR /app/src
@@ -70,17 +71,17 @@ WORKDIR /app/src
 COPY --from=builder /deps /usr/local/lib/python3.14/site-packages
 
 # Copy source code
-COPY --chown=appuser:appuser src/ .
+COPY --chown=10001:10001 src/ .
 
 # Switch to non-root user
-USER appuser
+USER 10001:10001
 
 # Expose FastAPI port
 EXPOSE 8000
 
 # Healthcheck endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/livez', timeout=3).read()" || exit 1
 
 # Entrypoint and command
 ENTRYPOINT ["/usr/bin/tini", "--"]
