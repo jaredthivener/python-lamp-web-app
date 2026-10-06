@@ -1,115 +1,38 @@
 #!/bin/bash
-# Complete start script for the Enhanced Lamp Web App
+# Start script for the Lamp Web App (local development)
 
-echo "🪔 Enhanced Lamp Web App with Database"
+echo "🪔 Lamp Web App"
 echo "=============================="
-echo ""
-echo "🎨 Features included:"
-echo "   ✨ Beautiful 3D lamp design with realistic shadows"
-echo "   🌙 Smooth light transitions and animations"
-echo "   📱 Mobile-responsive with touch support"
-echo "   🗄️  Azure SQL Database integration with persistent state"
-echo "   📊 Usage analytics and statistics dashboard"
-echo "   🔑 Azure Key Vault integration for secure configuration"
-echo "   🐳 Docker-ready with production optimizations"
-echo "   ⌨️  Keyboard shortcuts (L for lamp toggle)"
-echo "   🎭 Particle animations and visual effects"
-echo "   ♿ Accessibility improvements"
-echo "   💾 State persistence across app restarts"
-echo "   🔧 Error handling and graceful fallbacks"
-echo ""
 
 # Check if uv is available
 if ! command -v uv &> /dev/null; then
-    echo "❌ uv not found. Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
-    if ! command -v uv &> /dev/null; then
-        echo "❌ uv installation failed. Please install manually: https://docs.astral.sh/uv/getting-started/installation/"
-        exit 1
-    fi
-fi
-echo "✅ uv is available"
-
-# Check if Python is available
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python3 not found. Please install Python 3.12+"
+    echo "❌ uv not found. Install it first: https://docs.astral.sh/uv/getting-started/installation/"
     exit 1
 fi
 
-# Check Python version
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-REQUIRED_VERSION="3.14"
-if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
-    echo "❌ Python $PYTHON_VERSION found, but this project requires Python $REQUIRED_VERSION or higher"
-    echo "   Please upgrade your Python installation"
+# Check if the port is already in use
+if lsof -Pi :${PORT:-8000} -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "❌ Port ${PORT:-8000} is already in use. Stop whatever is listening there, or pick another: PORT=8001 ./start.sh"
     exit 1
 fi
-echo "✅ Python $PYTHON_VERSION is available"
-
-# Check if port 8000 is already in use
-if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo "⚠️  Port 8000 is already in use. Stopping existing server..."
-    pkill -f "uvicorn.*8000" 2>/dev/null || true
-    pkill -f "python.*server" 2>/dev/null || true
-    sleep 2
-fi
-
-# Check if virtual environment exists and sync dependencies
-if [ ! -d ".venv" ]; then
-    echo "🔧 Creating virtual environment with uv..."
-    uv venv .venv
-    echo "✅ Virtual environment created!"
-fi
-
-# Activate virtual environment
-echo "🔄 Activating virtual environment..."
-if [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
-else
-    echo "❌ .venv/bin/activate not found. Virtual environment activation failed."
-    exit 1
-fi
-
-# Install dependencies
-echo "📦 Installing dependencies with uv..."
-if [ -f "pyproject.toml" ]; then
-    # Try to install in editable mode first, fallback to requirements.txt
-    if ! uv pip install -e .; then
-        echo "⚠️  Editable install failed, falling back to requirements.txt..."
-        uv pip install -r src/requirements.txt
-    fi
-else
-    uv pip install -r src/requirements.txt
-fi
-echo "✅ Dependencies installed!"
 
 echo ""
-echo "🚀 Starting the development server..."
-echo "   📍 Main App: http://127.0.0.1:8000"
-echo "   📖 API Docs: http://127.0.0.1:8000/docs"
-echo "   🩺 Health Check: http://127.0.0.1:8000/health"
-echo "   📊 Dashboard: http://127.0.0.1:8000/dashboard"
+echo "   📍 Main App: http://127.0.0.1:${PORT:-8000}"
+echo "   📖 API Docs: http://127.0.0.1:${PORT:-8000}/docs"
+echo "   🩺 Health Check: http://127.0.0.1:${PORT:-8000}/health"
 echo ""
 echo "🎮 How to use:"
-echo "   • Click the lamp or press 'L' to toggle the light"
-echo "   • Pull the string for interactive lamp control"
-echo "   • View live statistics in the dashboard section"
-echo "   • Tab to navigate with keyboard"
-echo "   • Enjoy the smooth animations and particle effects!"
-echo ""
-echo "💡 For local development:"
-echo "   • Create .env file with SQL_CONNECTION_STRING for database"
-echo "   • Or set environment variables for Azure Key Vault integration"
-echo "   • Database tables will be created automatically on first run"
+echo "   • Drag the chain down, or tap its knob, to switch the lamp"
+echo "   • Press 'L', or Tab to the cord and press Enter"
+echo "   • Open a second window: both show the same lamp, live"
 if [ -z "$POSTGRES_CONNECTION_STRING" ] && [ -z "$KEY_VAULT_URI" ]; then
     echo ""
     echo "ℹ️  No POSTGRES_CONNECTION_STRING or KEY_VAULT_URI detected."
-    echo "   Starting in cache-only mode for local development."
+    echo "   The lamp will be kept in a local SQLite file instead."
 fi
 echo ""
 echo "💡 Press Ctrl+C to stop the server"
 echo "=============================="
 
-# Start the server
-python3 src/main.py
+# uv creates the virtual environment and installs pyproject.toml's dependencies as needed
+exec uv run python src/main.py

@@ -6,7 +6,7 @@
 # How to use:
 #   make all           → Build + Scan + Dive + SBOM (full workflow)
 #   make build         → Build the Docker image (ARM64 by default)
-#   make run           → Run the container locally on port 8080
+#   make run           → Run the container locally on port 8000
 #   make shell         → Open a shell inside the container
 #   make scan          → Scan image for vulnerabilities using Trivy
 #   make dive          → Inspect image layers interactively
@@ -49,7 +49,7 @@ build:
 .PHONY: run
 run:
 	@echo "🏃 Running $(IMAGE_NAME):$(TAG)..."
-	docker run --rm -it -p 8080:8080 $(IMAGE_NAME):$(TAG)
+	docker run --rm -it -p 8000:8000 $(IMAGE_NAME):$(TAG)
 
 .PHONY: shell
 shell:

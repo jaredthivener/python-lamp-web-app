@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="A lamp with a pull cord, shared live by everyone looking at it">
+    <meta name="theme-color" content="#0b0907">
+    <title>Lamp</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <script type="module" src="lamp.js"></script>
+</head>
+<body>
+    <!-- The wall. It is written as if fully lit; the canvas below decides how much light reaches it. -->
+    <main class="wall">
+        <header>
+            <h1>Pull the cord.</h1>
+            <p class="lede">One lamp, shared by everyone on this page. Switch it for all of us.</p>
+        </header>
+
+        <dl class="plaques">
+            <div class="plaque">
+                <dt>Pulls today</dt>
+                <dd id="today">&ndash;</dd>
+            </div>
+            <div class="plaque">
+                <dt>All time</dt>
+                <dd id="lifetime">&ndash;</dd>
+            </div>
+            <div class="plaque">
+                <dt>Visitors today</dt>
+                <dd id="visitors">&ndash;</dd>
+            </div>
+            <div class="plaque">
+                <dt>In the room</dt>
+                <dd id="viewers">&ndash;</dd>
+            </div>
+        </dl>
+    </main>
+
+    <!-- Where the words go when they blow away. Under the lamp's light, like the wall itself. -->
+    <canvas id="ash" aria-hidden="true"></canvas>
+
+    <!-- The lamp, and its light over everything above -->
+    <canvas id="scene" aria-hidden="true"></canvas>
+
+    <!-- Rides on the knob at the end of the chain: the drag target and the keyboard switch -->
+    <button id="cord" type="button" aria-pressed="false">Lamp cord</button>
+
+    <p id="notice" role="status"></p>
+</body>
+</html>

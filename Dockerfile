@@ -23,12 +23,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /var/log/* /var/cache/* /usr/share/doc/* /usr/share/man/* /tmp/*
 
-# Copy dependency list
-COPY src/requirements.txt /tmp/requirements.txt
+# Copy dependency list (pyproject.toml is the single source of truth)
+COPY pyproject.toml /tmp/pyproject.toml
 
 # Install Python dependencies into isolated /deps directory
 RUN mkdir -p /deps \
-    && uv pip install --no-cache-dir --target /deps -r /tmp/requirements.txt
+    && uv pip install --no-cache-dir --target /deps -r /tmp/pyproject.toml
 
 # ------------------------------------------------------------------------
 # 🏗️ Production Stage
@@ -39,7 +39,7 @@ FROM python:${PYTHON_VERSION}-slim-bookworm@sha256:b823ded4377ebb5ff1af5926702df
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
     org.opencontainers.image.description="FastAPI application with PostgreSQL support" \
     org.opencontainers.image.source="https://github.com/jaredthivener/python-lamp-web-app" \
-    org.opencontainers.image.version="1.1.0" \
+    org.opencontainers.image.version="2.0.0" \
     org.opencontainers.image.vendor="Jared Thivener" \
     org.opencontainers.image.licenses="MIT" \
     org.opencontainers.image.sbom="true"
@@ -48,17 +48,12 @@ LABEL org.opencontainers.image.title="Python LAMP Web App" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
-    PATH="/root/.local/bin:$PATH" \
     PORT=8000
 
 # Install runtime deps (no compilers, no apt cache left behind)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl libpq5 tini ca-certificates libssl3 \
-    && curl -LsSf https://astral.sh/uv/install.sh -o install_uv.sh \
-    && sh install_uv.sh \
+    libpq5 tini ca-certificates libssl3 \
     # Cleanup: aggressively remove APT metadata and logs
-    && apt-get purge -y curl \
-    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /var/cache/* /usr/share/doc/* /usr/share/man/* /var/log/* /tmp/*
 
 # Create non-root user

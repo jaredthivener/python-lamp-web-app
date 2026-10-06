@@ -22,10 +22,10 @@ cd /workspaces/python-lamp-web-app/src
 python -c "
 import sys
 sys.path.insert(0, '/workspaces/python-lamp-web-app/src')
-from database.database import init_database
+from store import Store
 
 try:
-    init_database()
+    Store().ping()
     print('✅ Database initialization completed successfully!')
 except Exception as e:
     print(f'❌ Database initialization failed: {e}')

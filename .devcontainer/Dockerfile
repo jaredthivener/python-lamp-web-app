@@ -20,24 +20,17 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Copy project files and install dependencies using uv
 COPY pyproject.toml /tmp/pyproject.toml
-COPY src/requirements.txt /tmp/requirements.txt
 WORKDIR /tmp
 
 # Install project dependencies and dev dependencies using uv
-RUN uv pip install --system -r /tmp/requirements.txt && \
+RUN uv pip install --system -r /tmp/pyproject.toml --group dev && \
     uv pip install --system \
-    pytest \
-    pytest-asyncio \
     pytest-cov \
-    black \
     flake8 \
-    mypy \
-    pre-commit \
-    httpx \
-    pytest-mock
+    pre-commit
 
 # Clean up
-RUN rm -rf /tmp/pyproject.toml /tmp/requirements.txt
+RUN rm -rf /tmp/pyproject.toml
 
 # Create workspace directory
 WORKDIR /workspaces/python-lamp-web-app
