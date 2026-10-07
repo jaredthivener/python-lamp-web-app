@@ -40,7 +40,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' =
     tier: 'Burstable'
   }
   properties: {
-    version: '17'
+    version: '18'
     authConfig: {
       activeDirectoryAuth: 'Enabled'
       passwordAuth: 'Disabled'
