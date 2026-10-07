@@ -47,12 +47,25 @@ jobs:
       # Microsoft's guidance for environments that are deployed repeatedly under the
       # same name is to delete the workspace permanently:
       # https://learn.microsoft.com/azure/azure-monitor/logs/delete-workspace#delete-a-workspace-permanently
+      #
+      # The REST call, not `az monitor log-analytics workspace delete --force`: on these
+      # runners that command, like the CLI's other long-running ones, sometimes crashes
+      # before it has sent anything (https://github.com/Azure/azure-cli/issues/33996).
       - name: Delete the Log Analytics workspace permanently
         run: |
           group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
-          for workspace in $(az monitor log-analytics workspace list --resource-group "$group" --query "[].name" --output tsv); do
-            az monitor log-analytics workspace delete --resource-group "$group" --workspace-name "$workspace" --force --yes
+          workspaces() { az monitor log-analytics workspace list --resource-group "$group" --query "[].id" --output tsv; }
+          for id in $(workspaces); do
+            az rest --method delete --url "${id}?api-version=2025-07-01&force=true"
           done
+          # The call returns before the workspace has gone. Wait for that, so the group's
+          # own deletion finds nothing left to soft-delete.
+          for _ in $(seq 1 30); do
+            [ -z "$(workspaces)" ] && exit 0
+            sleep 10
+          done
+          echo "::error::The workspace is still there after five minutes."
+          exit 1
 
       - name: Delete resource group
         run: az group delete --name rg-lamp-web-app-${{ env.AZURE_ENV_NAME }} --yes --no-wait
