@@ -201,6 +201,7 @@ Compared with Flux's recommended settings for [Kustomizations](https://fluxcd.io
 - Manifests are validated on every pull request, with Flux's own validator (`flux schema`, which is still in preview)
 - Strict substitution is on, so a placeholder with no value fails instead of becoming an empty string
 - Only stable Flux API versions are used, and nothing secret is in the manifests or the bundle
+- Manifests cannot pull in remote bases: the extension starts kustomize-controller with `--no-remote-bases`, and nothing in `k8s/` uses one
 
 **Not followed, and why**
 
@@ -212,7 +213,6 @@ Compared with Flux's recommended settings for [Kustomizations](https://fluxcd.io
 | Flux: `latest` for staging; a `stable` tag or a version range for production | `latest` | There is one environment, and it is for practice |
 | Microsoft's samples pin chart versions | A 1.x range for both charts, as in Flux's own examples | New releases arrive without anyone doing anything. The cost is in the table above: Git does not say which version is running |
 | Microsoft: a second person reviews every change to `main`; signed commits | `main` requires the Tests check and refuses force pushes, and that is all | One contributor, so there is nobody to review |
-| Flux: start kustomize-controller with `--no-remote-bases` | Not checked | The extension sets the controller's flags. Nothing in `k8s/` uses a remote base |
 
 ## 🎓 Things to practise on it
 
