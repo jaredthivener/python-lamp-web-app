@@ -230,7 +230,8 @@ Run the **Destroy Azure Infrastructure** workflow. The cluster's node resource g
 By hand, delete the Log Analytics workspace permanently before the group:
 
 ```bash
-az monitor log-analytics workspace delete --resource-group rg-lamp-web-app-dev --workspace-name <workspace> --force --yes
+id=$(az monitor log-analytics workspace list --resource-group rg-lamp-web-app-dev --query "[0].id" --output tsv)
+az rest --method delete --url "${id}?api-version=2025-07-01&force=true"
 az group delete --name rg-lamp-web-app-dev
 ```
 
