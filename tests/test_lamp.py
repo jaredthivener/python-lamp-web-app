@@ -6,6 +6,8 @@ and a lost database degrades the app instead of taking it down.
 import asyncio
 import os
 import sqlite3
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -176,6 +178,33 @@ def test_replicas_agree_on_the_lamp_and_who_is_watching(store, monkeypatch):
         assert store.pulse("a-third-replica", 0)[1] == 0
 
     asyncio.run(scenario())
+
+
+def test_a_replica_reporting_twice_at_once_is_counted_once(store):
+    # A replica that has just started does this: its background loop and its first
+    # request both report, at the same moment.
+    with ThreadPoolExecutor(8) as pool:
+        # Open eight connections first, so that the reports after them start together
+        list(pool.map(lambda n: store.pulse(f"warm-up-{n}", 0), range(8)))
+        list(pool.map(lambda _: store.pulse("this-replica", 1), range(40)))
+    assert store.pulse("another-replica", 0)[1] == 1
+
+
+def test_a_request_during_the_first_sync_is_not_turned_away(store, monkeypatch):
+    # The background loop has asked the database and is still waiting for the lamp's state
+    asking, answer = threading.Event(), store.snapshot
+
+    def slow_snapshot():
+        asking.set()
+        time.sleep(0.2)
+        return answer()
+
+    monkeypatch.setattr(store, "snapshot", slow_snapshot)
+    monkeypatch.setattr(main, "store", store)
+    monkeypatch.setattr(main, "hub", main.Hub())
+    with TestClient(main.app) as client:
+        assert asking.wait(5)
+        assert client.get(STATUS).status_code == 200
 
 
 def test_a_replica_with_no_viewers_still_reports_the_whole_room(client, store):

@@ -101,11 +101,13 @@ async def catch_up(idle_too: bool = False) -> bool:
     if not (idle_too or viewers or hub.reported):
         return False  # nobody here to tell, and no count of ours left to take back
     changed_at, room = await asyncio.to_thread(store.pulse, REPLICA, viewers)
-    hub.checked_at = time.monotonic()
     hub.reported = viewers
     hub.elsewhere = max(0, room - viewers)
     if hub.snapshot is None or (changed_at and changed_at != hub.snapshot.changed_at):
         hub.publish(await asyncio.to_thread(store.snapshot))  # a pull made elsewhere
+    # Not before the lamp's state is in: until then a request has to ask for itself,
+    # or it finds no state and a recent check, and reports the lamp unreachable.
+    hub.checked_at = time.monotonic()
     return True
 
 

@@ -20,6 +20,7 @@ from psycopg2.extensions import parse_dsn  # type: ignore[import-untyped]
 from pydantic import BaseModel, computed_field
 from sqlalchemy import Boolean, Column, DateTime, Integer, MetaData, String, Table, Text
 from sqlalchemy import create_engine, delete, func, insert, select, true, update
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -204,12 +205,14 @@ class Store:
         """
         now = datetime.now(timezone.utc)
         mine = {"viewers": viewers, "seen_at": now}
-        own_row = lamp_viewers.c.replica == replica
+        # One statement. As an update followed by an insert, two reports from a replica
+        # that has just started (its background loop, its first request) both inserted.
+        dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
+        report = dialect.insert(lamp_viewers).values(replica=replica, **mine)
         with self.engine.begin() as conn:
-            if not conn.execute(
-                update(lamp_viewers).where(own_row).values(mine)
-            ).rowcount:
-                conn.execute(insert(lamp_viewers).values(replica=replica, **mine))
+            conn.execute(
+                report.on_conflict_do_update(index_elements=["replica"], set_=mine)
+            )
             changed_at = conn.execute(
                 select(lamp_status.c.last_updated).where(lamp_status.c.id == 1)
             ).scalar_one()
