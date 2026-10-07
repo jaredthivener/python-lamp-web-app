@@ -36,6 +36,14 @@ spec:
   # Put back anything in the release that someone changes by hand
   driftDetection:
     mode: enabled
+    # ...except what AKS changes. Its admissions enforcer adds exclusions for AKS's own
+    # namespaces to this webhook's namespaceSelector, and adds them again each time
+    # they are removed. Undoing that leaves the release never ready, and nothing that
+    # depends on it is applied.
+    ignore:
+      - paths: ["/webhooks/0/namespaceSelector"]
+        target:
+          kind: ValidatingWebhookConfiguration
   # A failed upgrade is rolled back to the release that worked
   install:
     remediation:

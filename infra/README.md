@@ -197,7 +197,7 @@ Compared with Flux's recommended settings for [Kustomizations](https://fluxcd.io
 - The extension's multi-tenancy lockdown stays on, and every Flux object lives in the configuration's namespace
 - Add-ons are applied, and healthy, before the app. Both Kustomizations prune what was removed, wait for health, and retry two minutes after a failure
 - The bundle is published with the commit it was built from
-- Helm charts come from OCI registries through `OCIRepository`, with drift detection on
+- Helm charts come from OCI registries through `OCIRepository`, with drift detection on. One field is exempt: the namespace selector on cert-manager's webhook, which [AKS extends by itself](https://learn.microsoft.com/azure/aks/faq#can-admission-controller-webhooks-affect-kube-system-and-internal-aks-namespaces-) to keep webhooks away from its own namespaces
 - Manifests are validated on every pull request, with Flux's own validator (`flux schema`, which is still in preview)
 - Strict substitution is on, so a placeholder with no value fails instead of becoming an empty string
 - Only stable Flux API versions are used, and nothing secret is in the manifests or the bundle
