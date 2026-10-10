@@ -13,6 +13,26 @@ inputs:
 runs:
   using: composite
   steps:
+    # Copacetic patches by building on top of the image, which needs BuildKit features that Docker only
+    # offers with the containerd image store ("requested experimental feature mergeop has been disabled
+    # on the build server: only enabled with containerd image store backend", on a runner without it).
+    # https://docs.docker.com/engine/storage/containerd/
+    # Switching stores hides the images of the old one, so the image is saved and loaded back.
+    - name: Use Docker's containerd image store
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        if docker info --format '{{ .DriverStatus }}' | grep -q io.containerd.snapshotter; then exit 0; fi
+        docker save "$IMAGE" --output "$RUNNER_TEMP/image.tar"
+        [ -f /etc/docker/daemon.json ] || echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
+        sudo jq '.features += {"containerd-snapshotter": true}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.new > /dev/null
+        sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json
+        sudo systemctl restart docker
+        docker load --input "$RUNNER_TEMP/image.tar"
+        rm "$RUNNER_TEMP/image.tar"
+        docker info --format '{{ .DriverStatus }}'
+
     # Copacetic publishes no maintained GitHub Action (copa-action's last release is from March 2024),
     # so this installs its release binary, checked against a checksum written down here. Bumping the
     # version means copying the two new checksums from the release's copacetic_checksums.txt.
