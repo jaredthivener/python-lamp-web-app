@@ -148,6 +148,9 @@ app = FastAPI(
     description="A lamp with a pull cord, shared live by everyone looking at it",
     version="2.0.0",
     lifespan=lifespan,
+    # OpenTelemetry is on by default and exports only where FASTAPI_OTEL_AUTO_CONFIGURE and
+    # OTEL_EXPORTER_OTLP_* point it. Health probes would be most of the traffic, and say nothing.
+    telemetry={"exclude": lambda scope: scope["path"] == "/livez"},
 )
 
 
