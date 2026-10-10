@@ -59,7 +59,7 @@ graph LR
 1. A pull request is opened. The **Tests** job runs, and with it Flux's validator over `k8s/`: every manifest is checked against its schema, with the `${PLACEHOLDERS}` filled in.
 2. It merges to `main`. The **Publish** job builds the Arm64 image and pushes it to the registry, tagged with the commit.
 3. The same job pushes the `k8s/` folder as an OCI artifact, with that image tag written in. If the commit is still the newest on `main`, the `latest` tag moves to it.
-4. Flux, inside the cluster, sees the new artifact within a minute and applies it. `k8s/infrastructure` (the gateway controller and cert-manager) goes first, then `k8s/app` (the public gateway and the application).
+4. Flux, inside the cluster, sees the new artifact within a minute and applies it. Four Flux Kustomizations apply it in order: `k8s/infrastructure` (the gateway controller and cert-manager) and `k8s/namespaces` first, then `k8s/instrumentation` (after the namespaces), then `k8s/app` (the public gateway and the application; after `infrastructure` and `instrumentation`). The Instrumentation comes before the app because AKS's webhook reads it when it sees the Deployment, and does nothing if it is not there yet.
 
 Nothing outside the cluster ever holds credentials for it. Values that differ per deployment (host name, identity, database address) are handed to Flux by Bicep as `manifestValues` and replace the `${PLACEHOLDERS}` in `k8s/app`. A placeholder that gets no value stops the rollout.
 

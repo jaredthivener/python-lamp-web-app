@@ -1,0 +1,7 @@
+# Applied before the app (the app Kustomization depends on this one): AKS's webhook reads the
+# Instrumentation when it sees the Deployment, and does nothing if there is none yet.
+# ${APPLICATIONINSIGHTS_CONNECTION_STRING} is filled in by Flux from the Bicep deployment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - instrumentation.yaml
