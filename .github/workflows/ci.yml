@@ -54,11 +54,13 @@ jobs:
           LAMP_HOST=lamp.example.com
           PUBLIC_IP_NAME=lamp-ip
           PUBLIC_IP_RESOURCE_GROUP=rg-lamp
+          APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=00000000-0000-0000-0000-000000000000
           APP_IDENTITY_CLIENT_ID=00000000-0000-0000-0000-000000000000
           POSTGRES_CONNECTION_STRING=host=db.example.com dbname=lamp user=lamp-app sslmode=require
           EOF
           flux schema validate k8s --schema-location default --schema-location ecosystem \
-            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict
+            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict \
+            --skip-kind monitor.azure.com/v1/Instrumentation # the AKS add-on's CRD has no published schema
 
       # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite

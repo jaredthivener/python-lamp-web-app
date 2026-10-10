@@ -6,7 +6,8 @@
 // - Entra ID sign-in with Azure RBAC, local accounts disabled
 // - Azure CNI Overlay with the Cilium dataplane and network policy
 // - Workload identity, so pods reach Azure services without secrets
-// - Managed Prometheus for metrics, Container Insights for logs
+// - Managed Prometheus for metrics, Container Insights for logs, and the OTLP agent
+//   for the app's own OpenTelemetry
 // - The Flux extension, pointed at the manifest bundle CI publishes
 // =============================================================================
 
@@ -68,6 +69,7 @@ param logAnalyticsWorkspaceId string
 param containerInsightsRuleId string
 
 @description('Values substituted for the placeholders, written like \${LAMP_HOST}, in the manifests under k8s/app')
+@secure()
 param manifestValues object
 
 var roles = {
@@ -126,7 +128,10 @@ resource publicIpRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 // =============================================================================
 // AKS Cluster
 // =============================================================================
-resource aks 'Microsoft.ContainerService/managedClusters@2026-05-01' = {
+// The preview API version, because the OpenTelemetry (OTLP) switches under
+// azureMonitorProfile.appMonitoring are not in the 2026-05-01 one. Everything else here
+// is the same in both.
+resource aks 'Microsoft.ContainerService/managedClusters@2025-09-02-preview' = {
   name: clusterName
   location: location
   tags: tags
@@ -244,6 +249,23 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-05-01' = {
     azureMonitorProfile: {
       metrics: {
         enabled: true
+      }
+      // Preview (Microsoft: not for production workloads). A node-local agent that takes
+      // the app's OTLP on a host port and forwards it to Application Insights, and a
+      // webhook that points pods in a namespace with an Instrumentation resource at it
+      // (k8s/app/lamp-app.yaml). Needs the two features registered on the subscription:
+      // Microsoft.ContainerService/AzureMonitorAppMonitoringPreview and
+      // Microsoft.Insights/OtlpApplicationInsights.
+      appMonitoring: {
+        autoInstrumentation: {
+          enabled: true
+        }
+        openTelemetryMetrics: {
+          enabled: true
+        }
+        openTelemetryLogs: {
+          enabled: true
+        }
       }
     }
 

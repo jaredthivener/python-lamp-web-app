@@ -94,6 +94,7 @@ Prices are West US 3, October 2026.
 | Two public IPs (site, outbound) | $7 |
 | Container registry (Basic) | $5 |
 | Prometheus ingestion (estimate) | $5 |
+| App telemetry in Application Insights (estimate; a few MB a day) | $0-2 |
 | Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
 | **Total** | **about $120** |
 
@@ -141,7 +142,11 @@ az aks start --resource-group rg-lamp-web-app-dev --name <cluster>
 az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 ```
 
-**Metrics.** In the portal, open the cluster and choose **Monitoring > Dashboards with Grafana**, or query the Azure Monitor workspace with PromQL.
+**Cluster metrics.** In the portal, open the cluster and choose **Monitoring > Dashboards with Grafana**, or query the Azure Monitor workspace with PromQL.
+
+**The app's own telemetry.** FastAPI 0.143 emits OpenTelemetry natively ([its docs](https://fastapi.tiangolo.com/advanced/opentelemetry/)). `FASTAPI_OTEL_AUTO_CONFIGURE=true` in `k8s/app/lamp-app.yaml` turns the export on; AKS's OTLP agent (preview) supplies the endpoint and forwards everything to the `lamp-appinsights-*` Application Insights resource. Open it and choose **Dashboards with Grafana > Lamp API (FastAPI OpenTelemetry)** for request rate, status codes, latency percentiles per route, errors and requests in flight. The source is `infra/dashboards/lamp-api.json`; it imports into any Grafana. Traces are under **Investigate > Search**; exceptions are logs.
+
+`/livez` probes are not recorded. Every open event stream counts as one long request that ended in `ConnectionError` when the page closed, so `/api/v1/lamp/events` shows as errors: filter that route out of an error-rate panel.
 
 **Logs.** In the portal, open the cluster and choose **Monitoring > Logs**, then query with KQL:
 
@@ -168,7 +173,7 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 - CPU and memory requests and limits on every pod defined here; two replicas; PodDisruptionBudgets; a `preStop` hook; readiness, liveness and startup probes; topology spread constraints
 - Pods run as non-root with no privilege escalation; network policies restrict traffic and block the node metadata endpoint
 - Image tags are commit hashes, never `latest`; base images are kept current by Dependabot
-- Managed Prometheus and Container Insights
+- Managed Prometheus and Container Insights; the app's OpenTelemetry goes to Application Insights through AKS's own agent, and the preview features it needs are registered per Microsoft's article
 - Flux with its default multi-tenancy lockdown
 
 **Not followed, and why**
@@ -186,6 +191,8 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | Least privilege for the database | The app is the server's Entra administrator | A lesser role takes SQL run from inside the network, which Bicep cannot do |
 | Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
 | A NAT gateway for outbound traffic | The load balancer | $32/month |
+| Preview features are not for production workloads | AKS OTLP application monitoring (preview), on the preview AKS API version | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The Bicep uses `2025-09-02-preview` for the cluster because the GA API has no OTLP switch |
+| Microsoft documents creating the OTLP Application Insights resource in the portal only | `Microsoft.Insights/components@2025-01-23-preview` with `AzureMonitorWorkspaceIngestionMode: Enabled` | The properties come from the REST API specification, not from a Learn article |
 
 ## 🔁 Checked against Flux's and Microsoft's GitOps guidance
 
