@@ -73,11 +73,24 @@ jobs:
 
       # The tests above run on a bare Python. This is the image that ships, so a base image
       # update from Dependabot only merges if the result starts and reaches the database.
-      - name: Build the image and check it serves
+      - name: Build the image
+        run: docker build -t lamp:ci .
+
+      # The same patch-and-check the published image gets, so a base image that cannot pass it
+      # fails here, on the pull request, and not after the merge.
+      - name: Patch the image and check it for fixable findings
+        uses: ./.github/actions/harden-image
+        with:
+          image: lamp:ci
+
+      # Its own Postgres: patching restarts Docker on the runner (see the action), which stops the
+      # job's service container.
+      - name: Check the image serves
         run: |
-          docker build -t lamp .
+          docker run -d --name lamp-db -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:18
+          until docker exec lamp-db pg_isready --username postgres; do sleep 1; done
           docker run -d --name lamp --network host \
-            -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/postgres lamp
+            -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:55432/postgres lamp:ci
           curl --fail --silent --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8000/health \
             | grep '"database":"postgresql"' || { docker logs lamp; exit 1; }
 
@@ -131,7 +144,18 @@ jobs:
         run: |
           az acr login --name "$REGISTRY"
           docker build --tag "$IMAGE" .
-          docker push "$IMAGE"
+
+      - name: Patch the image and check it for fixable findings
+        if: steps.registry.outputs.server != ''
+        uses: ./.github/actions/harden-image
+        with:
+          image: ${{ steps.registry.outputs.server }}/lamp-app:${{ github.sha }}
+
+      - name: Push the image
+        if: steps.registry.outputs.server != ''
+        env:
+          IMAGE: ${{ steps.registry.outputs.server }}/lamp-app:${{ github.sha }}
+        run: docker push "$IMAGE"
 
       - name: Install the Flux CLI
         if: steps.registry.outputs.server != ''

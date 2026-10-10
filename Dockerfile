@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------
 # The version and digest are written out in both FROM lines rather than passed through an ARG,
 # which Dependabot cannot read: with an ARG here it never proposes a newer Python.
-FROM python:3.14.8-slim-trixie@sha256:f85c5697265c178cc6887276c55fe16cf3d14ca35c3df6a5eab3b360534a55d2 AS builder
+FROM python:3.15.0rc3-slim-trixie@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549 AS builder
 
 # Environment setup for clean, fast, reproducible builds
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -34,7 +34,7 @@ RUN mkdir -p /deps \
 # ------------------------------------------------------------------------
 # 🏗️ Production Stage
 # ------------------------------------------------------------------------
-FROM python:3.14.8-slim-trixie@sha256:f85c5697265c178cc6887276c55fe16cf3d14ca35c3df6a5eab3b360534a55d2
+FROM python:3.15.0rc3-slim-trixie@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
@@ -68,7 +68,7 @@ RUN groupadd -r -g 10001 appuser && useradd -r -u 10001 -g appuser -s /bin/sh -m
 WORKDIR /app/src
 
 # Copy dependencies from builder
-COPY --from=builder /deps /usr/local/lib/python3.14/site-packages
+COPY --from=builder /deps /usr/local/lib/python3.15/site-packages
 
 # Copy source code
 COPY --chown=10001:10001 src/ .
