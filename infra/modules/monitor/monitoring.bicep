@@ -31,13 +31,13 @@ param tags object = {}
 @description('Object ID of a user or group allowed to query the metrics. Empty grants nobody.')
 param metricsReaderObjectId string = ''
 
-resource monitorWorkspace 'Microsoft.Monitor/accounts@2023-04-03' = {
+resource monitorWorkspace 'Microsoft.Monitor/accounts@2025-10-03' = {
   name: monitorWorkspaceName
   location: location
   tags: tags
 }
 
-resource prometheusEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2023-03-11' = {
+resource prometheusEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2024-03-11' = {
   name: monitorWorkspaceName
   location: location
   tags: tags
@@ -45,7 +45,7 @@ resource prometheusEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2023-03-
   properties: {}
 }
 
-resource prometheusRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+resource prometheusRule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
   name: monitorWorkspaceName
   location: location
   tags: tags
@@ -81,7 +81,7 @@ resource prometheusRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
 // =============================================================================
 // Logs
 // =============================================================================
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2026-03-01' = {
   name: logAnalyticsWorkspaceName
   location: location
   tags: tags
@@ -106,7 +106,7 @@ var logStreams = [
   'Microsoft-KubePodInventory'
 ]
 
-resource containerInsightsRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+resource containerInsightsRule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
   name: logAnalyticsWorkspaceName
   location: location
   tags: tags
@@ -192,14 +192,8 @@ output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 @description('The resource ID of the Container Insights data collection rule')
 output containerInsightsRuleId string = containerInsightsRule.id
 
-@description('The name of the Application Insights resource')
-output applicationInsightsName string = applicationInsights.name
-
 @description('The rule Azure created to route the app\'s OpenTelemetry. The cluster has to be associated with it, or its agent never starts listening for OTLP.')
 output applicationInsightsRuleId string = applicationInsights.properties.DataCollectionRuleResourceId
-
-@description('The resource ID of the Application Insights resource')
-output applicationInsightsId string = applicationInsights.id
 
 @description('Where the app\'s OpenTelemetry is sent. Not a secret on its own, but it identifies the resource.')
 @secure()
