@@ -7,7 +7,8 @@ targetScope = 'subscription'
 //
 // Architecture:
 // - Network module: virtual network, private DNS for Postgres, the site's public IP
-// - Monitoring module: managed Prometheus for metrics, Container Insights for logs
+// - Monitoring module: managed Prometheus for metrics, Container Insights for logs,
+//   Application Insights for the app's own OpenTelemetry
 // - ACR module: registry for the app image and the Flux manifest bundle
 // - PostgreSQL module: private flexible server with Entra-only sign-in
 // - AKS module: the cluster, its identities, and the Flux (GitOps) configuration
@@ -90,6 +91,7 @@ module monitoring 'modules/monitor/monitoring.bicep' = {
   params: {
     monitorWorkspaceName: '${resourcePrefix}-metrics-${resourceToken}'
     logAnalyticsWorkspaceName: '${resourcePrefix}-logs-${resourceToken}'
+    applicationInsightsName: '${resourcePrefix}-appinsights-${resourceToken}'
     location: location
     tags: commonTags
     metricsReaderObjectId: clusterAdminObjectId
@@ -181,6 +183,7 @@ module aks 'modules/compute/aks.bicep' = {
       PUBLIC_IP_NAME: network.outputs.publicIpName
       PUBLIC_IP_RESOURCE_GROUP: resourceGroupName
       APP_IDENTITY_CLIENT_ID: appIdentity.outputs.managedIdentityClientId
+      APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
       POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.serverFqdn} dbname=${postgresDatabaseName} user=${appIdentity.outputs.managedIdentityName} sslmode=require'
     }
   }
