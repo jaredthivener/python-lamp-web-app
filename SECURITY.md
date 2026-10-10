@@ -119,7 +119,7 @@ repos:
     rev: 23.12.1
     hooks:
       - id: black
-        language_version: python3.14
+        language_version: python3.15
   
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0

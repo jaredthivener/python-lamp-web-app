@@ -1,0 +1,74 @@
+name: Harden the image
+description: >
+  Patches the operating-system packages in a local Docker image that have a fix, with Copacetic,
+  then fails if a fixable HIGH or CRITICAL finding is still there. Findings with no fix are
+  reported by the scan and left alone: there is nothing to apply.
+  https://github.com/project-copacetic/copacetic
+
+inputs:
+  image:
+    description: The local image, repository:tag, as in the Docker daemon. It is replaced by the patched one.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Copacetic publishes no maintained GitHub Action (copa-action's last release is from March 2024),
+    # so this installs its release binary, checked against a checksum written down here. Bumping the
+    # version means copying the two new checksums from the release's copacetic_checksums.txt.
+    - name: Install Copacetic
+      shell: bash
+      env:
+        COPA_VERSION: "0.15.0"
+        COPA_SHA256_AMD64: cff3fe9320f3bd24bafcfd0ce877ef57e23acad0836da0ac6c253919f71c9cad
+        COPA_SHA256_ARM64: 2444b6109c6164beef980641ec5f2813bc42b1703add6dd73591ace23051ca8f
+      run: |
+        case "$(uname -m)" in
+          x86_64) arch=amd64; sum=$COPA_SHA256_AMD64 ;;
+          aarch64) arch=arm64; sum=$COPA_SHA256_ARM64 ;;
+          *) echo "::error::Unsupported architecture $(uname -m)"; exit 1 ;;
+        esac
+        file="copa_${COPA_VERSION}_linux_${arch}.tar.gz"
+        curl -fsSL -o "$RUNNER_TEMP/$file" "https://github.com/project-copacetic/copacetic/releases/download/v${COPA_VERSION}/$file"
+        echo "$sum  $RUNNER_TEMP/$file" | sha256sum --check -
+        tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP" copa
+        sudo install "$RUNNER_TEMP/copa" /usr/local/bin/copa
+
+    # Copacetic's own documentation scans with "--pkg-types os --ignore-unfixed": it patches OS packages
+    # that have a fixed version, and nothing else.
+    - name: Scan for fixable operating-system findings
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      env:
+        TRIVY_PKG_TYPES: os
+      with:
+        image-ref: ${{ inputs.image }}
+        format: json
+        output: ${{ runner.temp }}/trivy-before.json
+        ignore-unfixed: true
+        exit-code: "0"
+
+    - name: Patch with Copacetic
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        REPORT: ${{ runner.temp }}/trivy-before.json
+      run: |
+        count=$(jq '[.Results[]?.Vulnerabilities[]?] | length' "$REPORT")
+        echo "Fixable operating-system findings: $count"
+        [ "$count" -gt 0 ] || exit 0
+        jq -r '.Results[]?.Vulnerabilities[]? | "\(.Severity) \(.VulnerabilityID) \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"' "$REPORT"
+        # Copacetic's default connection (the Docker daemon's own BuildKit) is the one that can see an
+        # image that exists only locally: a separate buildx builder tried to pull it from a registry.
+        copa patch --image "$IMAGE" --report "$REPORT" --tag hardened
+        # Back under the name it came in with, so the next steps (the push, the smoke test) use it
+        docker tag "${IMAGE%:*}:hardened" "$IMAGE"
+
+    - name: Fail on a fixable HIGH or CRITICAL finding
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      env:
+        TRIVY_PKG_TYPES: os
+      with:
+        image-ref: ${{ inputs.image }}
+        ignore-unfixed: true
+        severity: HIGH,CRITICAL
+        exit-code: "1"

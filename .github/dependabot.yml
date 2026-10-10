@@ -52,7 +52,10 @@ updates:
 
   # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # The workflows, and the action in this repository that they use
+    directories:
+      - "/"
+      - "/.github/actions/harden-image"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -84,7 +87,7 @@ updates:
       include: "scope"
     rebase-strategy: "auto"
     ignore:
-      # Patch releases and rebuilt images merge themselves. A new minor (3.15) is a change to
+      # Patch releases and rebuilt images merge themselves. A new minor (3.16) is a change to
       # .python-version, pyproject.toml and the site-packages path in the Dockerfile as well,
       # so it is done by hand.
       - dependency-name: "python"
