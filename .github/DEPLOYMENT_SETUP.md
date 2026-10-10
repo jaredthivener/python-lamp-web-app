@@ -109,13 +109,21 @@ In your GitHub repository, go to **Settings** > **Secrets and variables** > **Ac
 | `AZURE_TENANT_ID`       | Directory (tenant) ID from step 1   | Azure AD tenant ID                 |
 | `AZURE_SUBSCRIPTION_ID` | Your Azure subscription ID          | Target subscription for deployment |
 
-## 4. Configure GitHub Environments (Optional but Recommended)
+## 4. Configure GitHub Environments
 
-1. Go to **Settings** > **Environments**
-2. Create environments: `dev`, `staging`, `prod`
-3. For each environment:
-   - Add protection rules (required reviewers for prod)
-   - Add environment-specific secrets if needed
+The Deploy and Destroy workflows run their job in the environment named by the `environment`
+input (`dev` unless chosen), so the environment's protection rules apply to every run. Each
+one needs the federated credential `repo:<owner>/<repo>:environment:<name>` from step 3.
+
+1. Go to **Settings** > **Environments** and create `dev` (and `staging`, `prod` if used)
+2. For each:
+   - **Required reviewers**: you. The job waits until you approve it
+   - **Deployment branches and tags**: selected branches, `main` only
+3. The `AZURE_*` secrets stay repository secrets; an environment secret of the same name would
+   take their place and is locked until the rules pass
+
+Deploy and Destroy share a concurrency group per environment, so they never overlap, and
+nothing is cancelled mid-run.
 
 ## 5. Test the Deployment
 

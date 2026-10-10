@@ -28,6 +28,16 @@ env:
 jobs:
   destroy-infrastructure:
     runs-on: ubuntu-latest
+    # The environment's protection rules (a required reviewer, main branch only) are what stand
+    # between a workflow run and the subscription: the job does not start until they pass.
+    # Its OIDC subject is repo:<owner>/<repo>:environment:<name>, one of the federated
+    # credentials on the app registration.
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    # Deploy and Destroy share a group, so neither runs while the other does. Nothing is
+    # cancelled: stopping a deployment half way is worse than waiting for it.
+    concurrency:
+      group: azure-${{ github.event.inputs.environment || 'dev' }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
