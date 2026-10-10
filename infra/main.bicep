@@ -150,18 +150,54 @@ module acr 'br/public:avm/res/container-registry/registry:0.13.1' = {
   }
 }
 
-module postgresDatabase 'modules/database/postgresql.bicep' = {
+module postgresDatabase 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.16.1' = {
   name: 'postgresql-deployment'
   scope: resourceGroup
   params: {
-    postgresServerName: '${resourcePrefix}-postgres-${resourceToken}'
-    postgresDatabaseName: postgresDatabaseName
+    name: '${resourcePrefix}-postgres-${resourceToken}'
     location: location
     tags: commonTags
-    delegatedSubnetId: network.outputs.postgresSubnetId
-    privateDnsZoneId: network.outputs.postgresDnsZoneId
-    administratorPrincipalId: appIdentity.outputs.principalId
-    administratorPrincipalName: appIdentity.outputs.name
+    // The module's defaults are zone-redundant high availability, geo-redundant backups and Defender's
+    // threat protection. This is a practice environment on a credit subscription, so the cheapest
+    // server is written out instead: one burstable core, no standby, no geo copy, no Defender.
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    availabilityZone: -1 // no preference: Azure picks, as it did before
+    highAvailability: 'Disabled'
+    geoRedundantBackup: 'Disabled'
+    backupRetentionDays: 7
+    storageSizeGB: 32
+    version: '18'
+    serverThreatProtection: 'Disabled'
+    enableAdvancedThreatProtection: false
+    // Azure picks the maintenance window, as it did before (the module's default is Sunday 01:00)
+    maintenanceWindow: {
+      customWindow: 'Disabled'
+    }
+    // Private only: the server lives in the delegated subnet and is reached through its private DNS zone
+    delegatedSubnetResourceId: network.outputs.postgresSubnetId
+    privateDnsZoneArmResourceId: network.outputs.postgresDnsZoneId
+    publicNetworkAccess: 'Disabled'
+    // No password: the app's identity is the server's Entra administrator, and signs in with a token
+    authConfig: {
+      activeDirectoryAuth: 'Enabled'
+      passwordAuth: 'Disabled'
+      tenantId: tenant().tenantId
+    }
+    administrators: [
+      {
+        objectId: appIdentity.outputs.principalId
+        principalName: appIdentity.outputs.name
+        principalType: 'ServicePrincipal'
+      }
+    ]
+    databases: [
+      {
+        name: postgresDatabaseName
+        charset: 'UTF8'
+        collation: 'en_US.utf8'
+      }
+    ]
   }
 }
 
@@ -196,7 +232,7 @@ module aks 'modules/compute/aks.bicep' = {
       PUBLIC_IP_RESOURCE_GROUP: resourceGroupName
       APP_IDENTITY_CLIENT_ID: appIdentity.outputs.clientId
       APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
-      POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.serverFqdn} dbname=${postgresDatabaseName} user=${appIdentity.outputs.name} sslmode=require'
+      POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.fqdn!} dbname=${postgresDatabaseName} user=${appIdentity.outputs.name} sslmode=require'
     }
   }
 }
@@ -233,7 +269,7 @@ output containerRegistryName string = acr.outputs.name
 output containerRegistryLoginServer string = acr.outputs.loginServer
 
 @description('The fully qualified domain name of the PostgreSQL Server')
-output postgresServerFqdn string = postgresDatabase.outputs.serverFqdn
+output postgresServerFqdn string = postgresDatabase.outputs.fqdn!
 
 @description('The Azure Monitor workspace that stores the cluster\'s Prometheus metrics')
 output monitorWorkspaceName string = monitoring.outputs.monitorWorkspaceName
