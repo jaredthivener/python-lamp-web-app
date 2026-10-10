@@ -7,14 +7,14 @@
     "opentelemetry"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "time": {
     "from": "now-1h",
     "to": "now"
   },
-  "refresh": "30s",
-  "description": "HTTP server metrics FastAPI emits natively over OpenTelemetry (http.server.request.duration, http.server.active_requests).",
+  "refresh": "1m",
+  "description": "HTTP server metrics FastAPI emits natively over OpenTelemetry, as stored in the Azure Monitor workspace (delta histograms: queried with sum_over_time).",
   "templating": {
     "list": [
       {
@@ -23,27 +23,6 @@
         "type": "datasource",
         "query": "prometheus",
         "current": {}
-      },
-      {
-        "name": "route",
-        "label": "Route",
-        "type": "query",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${ds}"
-        },
-        "includeAll": true,
-        "multi": true,
-        "allValue": ".+",
-        "refresh": 2,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        },
-        "query": {
-          "query": "label_values(http_server_request_duration_seconds_count{service_name=\"lamp-app\"}, http_route)",
-          "refId": "r"
-        }
       }
     ]
   },
@@ -65,17 +44,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval]))",
+          "expr": "sum(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__range]))) / $__range_s",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -84,9 +67,6 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -109,19 +89,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (1 - (sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "100 * (1 - (sum(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\",\"http.response.status_code\"=~\"5..\"}[$__range]))) or vector(0)) / sum(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__range]))))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "min": 0,
-          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -138,13 +120,12 @@
                 "value": 99
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
       },
+      "min": 0,
+      "max": 100,
       "options": {
         "colorMode": "value"
       }
@@ -166,17 +147,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__range])))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -185,9 +170,6 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -196,7 +178,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "In flight now",
+      "title": "Requests in flight (last report)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -210,17 +192,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(http_server_active_requests{service_name=\"lamp-app\"})",
+          "expr": "sum({\"http.server.active_requests\",\"service.name\"=\"lamp-app\"})",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -229,9 +215,6 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -254,17 +237,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(count by (service_instance_id) (http_server_active_requests{service_name=\"lamp-app\"}))",
+          "expr": "count(count by (\"k8s.pod.name\") (last_over_time({\"http.server.active_requests\",\"service.name\"=\"lamp-app\"}[10m])))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -273,9 +260,6 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -298,17 +282,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__range]))",
+          "expr": "sum(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__range])))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -317,9 +305,6 @@
                 "value": null
               }
             ]
-          },
-          "color": {
-            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -342,12 +327,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval]))",
-          "legendFormat": "{{http_route}}",
+          "expr": "sum by (\"http.route\")(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "legendFormat": "{{http.route}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -374,12 +360,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval]))",
-          "legendFormat": "{{http_response_status_code}}",
+          "expr": "sum by (\"http.response.status_code\")(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "legendFormat": "{{http.response.status_code}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -406,30 +393,33 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__interval])))",
           "legendFormat": "p50",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__interval])))",
           "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__interval])))",
           "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -456,12 +446,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
-          "legendFormat": "{{http_route}}",
+          "expr": "histogram_quantile(0.95, sum by (\"http.route\")(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\"}[$__interval])))",
+          "legendFormat": "{{http.route}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -488,21 +479,23 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", http_response_status_code=~\"5..\"}[$__rate_interval]))",
-          "legendFormat": "5xx {{http_route}}",
+          "expr": "sum by (\"http.route\") (histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.response.status_code\"=~\"5..\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "legendFormat": "5xx {{http.route}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         },
         {
           "refId": "B",
-          "expr": "sum by (http_route, error_type) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", error_type!=\"\"}[$__rate_interval]))",
-          "legendFormat": "{{error_type}} {{http_route}}",
+          "expr": "sum by (\"http.route\", \"error.type\") (histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\",\"error.type\"!=\"\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "legendFormat": "{{error.type}} {{http.route}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -515,7 +508,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Requests in flight by replica",
+      "title": "Requests in flight by replica (last report)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -529,12 +522,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (service_instance_id) (http_server_active_requests{service_name=\"lamp-app\"})",
-          "legendFormat": "{{service_instance_id}}",
+          "expr": "sum by (\"k8s.pod.name\") ({\"http.server.active_requests\",\"service.name\"=\"lamp-app\"})",
+          "legendFormat": "{{k8s.pod.name}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -561,23 +555,25 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (increase(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__range]))",
+          "expr": "sum by (\"http.route\") (histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__range])))",
           "legendFormat": "requests",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
           },
+          "interval": "1m",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (\"http.route\") (sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\"}[$__range])))",
           "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
           },
+          "interval": "1m",
           "instant": true,
           "format": "table"
         }
@@ -590,7 +586,7 @@
         {
           "id": "joinByField",
           "options": {
-            "byField": "http_route",
+            "byField": "http.route",
             "mode": "outer"
           }
         },
@@ -604,7 +600,7 @@
             "renameByName": {
               "Value #A": "Requests",
               "Value #B": "p95 (s)",
-              "http_route": "Route"
+              "http.route": "Route"
             }
           }
         }
@@ -613,7 +609,7 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Event streams opened / s",
+      "title": "Event streams closed / s",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -627,12 +623,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval]))",
-          "legendFormat": "streams opened",
+          "expr": "sum(histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"=\"/api/v1/lamp/events\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "legendFormat": "streams",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -641,7 +638,7 @@
         },
         "overrides": []
       },
-      "description": "A stream is counted when the page closes it (the request ends then)."
+      "description": "A stream is counted when the page closes it: the request ends then."
     },
     {
       "id": 15,
@@ -660,21 +657,23 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"=\"/api/v1/lamp/events\"}[$__interval])))",
           "legendFormat": "p50",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"=\"/api/v1/lamp/events\"}[$__interval])))",
           "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
-          }
+          },
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -683,7 +682,7 @@
         },
         "overrides": []
       },
-      "description": "Not latency: the time between a page opening the live stream and closing it. With explicit buckets (FastAPI's default, as in a local Grafana) visits longer than 10 s all read as 10 s; Azure's exponential histograms have no such cap."
+      "description": "Not latency: the time between a page opening the live stream and closing it."
     }
   ]
 }
