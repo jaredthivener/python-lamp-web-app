@@ -81,15 +81,15 @@ var roles = {
   clusterAdmin: 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b' // Azure Kubernetes Service RBAC Cluster Admin
 }
 
-resource clusterIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource clusterIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: clusterIdentityName
 }
 
-resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: appIdentityName
 }
 
-resource fluxIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource fluxIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: fluxIdentityName
 }
 
@@ -101,7 +101,7 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' existing = {
   name: publicIpName
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: containerRegistryName
 }
 
@@ -346,7 +346,7 @@ resource fluxPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 
 // Workload identity: a token Kubernetes issues to one service account is accepted by
 // Entra ID as proof of being this managed identity. No secret is stored anywhere.
-resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2025-01-31-preview' = {
+resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: appIdentity
   name: clusterName
   properties: {
@@ -356,7 +356,7 @@ resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federat
   }
 }
 
-resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2025-01-31-preview' = {
+resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: fluxIdentity
   name: clusterName
   properties: {
