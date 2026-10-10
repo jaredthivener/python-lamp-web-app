@@ -447,9 +447,36 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
         timeoutInSeconds: 600
         retryIntervalInSeconds: 120 // after a failure; the default waits ten minutes
       }
+      // The namespaces, then the Instrumentation resource, then the app. AKS's app-monitoring
+      // webhook reads the Instrumentation resource when it handles a Deployment being created
+      // or updated, and does nothing (failurePolicy Ignore) if there is none. Within one
+      // Kustomization Flux creates the Deployment first, so the first deploy ran without
+      // OpenTelemetry settings. Measured on Flux v2.9.6 and Kubernetes 1.36: Deployment
+      // before Instrumentation in one Kustomization, Instrumentation before Deployment with
+      // dependsOn. kustomize's sortOptions fifo does not change Flux's order.
+      namespaces: {
+        path: './namespaces'
+        prune: true
+        wait: true
+        timeoutInSeconds: 600
+        retryIntervalInSeconds: 120
+      }
+      instrumentation: {
+        path: './instrumentation'
+        dependsOn: ['namespaces']
+        prune: true
+        wait: true
+        timeoutInSeconds: 600
+        retryIntervalInSeconds: 120
+        postBuild: {
+          substitute: {
+            APPLICATIONINSIGHTS_CONNECTION_STRING: manifestValues.APPLICATIONINSIGHTS_CONNECTION_STRING
+          }
+        }
+      }
       app: {
         path: './app'
-        dependsOn: ['infrastructure']
+        dependsOn: ['infrastructure', 'instrumentation']
         prune: true
         wait: true
         timeoutInSeconds: 600
