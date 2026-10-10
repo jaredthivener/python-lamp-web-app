@@ -83,10 +83,14 @@ jobs:
         with:
           image: lamp:ci
 
+      # Its own Postgres: patching restarts Docker on the runner (see the action), which stops the
+      # job's service container.
       - name: Check the image serves
         run: |
+          docker run -d --name lamp-db -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:18
+          until docker exec lamp-db pg_isready --username postgres; do sleep 1; done
           docker run -d --name lamp --network host \
-            -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/postgres lamp:ci
+            -e POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:55432/postgres lamp:ci
           curl --fail --silent --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8000/health \
             | grep '"database":"postgresql"' || { docker logs lamp; exit 1; }
 
