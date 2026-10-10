@@ -100,6 +100,8 @@ jobs:
       cancel-in-progress: false
     env:
       RESOURCE_GROUP: rg-lamp-web-app-dev
+    outputs:
+      digest: ${{ steps.manifests.outputs.digest }} # the bundle the cluster is meant to run, if this run moved latest
 
     steps:
       - name: Checkout repository
@@ -136,6 +138,7 @@ jobs:
         uses: fluxcd/flux2/action@b9c17924adb533d3617ec7de97a7b0f4acc07b39 # v2.9.6
 
       - name: Publish the manifests
+        id: manifests
         if: steps.registry.outputs.server != ''
         env:
           REGISTRY: ${{ steps.registry.outputs.server }}
@@ -144,13 +147,100 @@ jobs:
           sed -i "s|registry.invalid/lamp-app|$REGISTRY/lamp-app|; s|newTag: unpublished|newTag: $GITHUB_SHA|" k8s/app/kustomization.yaml
           grep -q "newTag: $GITHUB_SHA" k8s/app/kustomization.yaml
 
-          flux push artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --path k8s \
-            --source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --revision "main@sha1:$GITHUB_SHA"
+          digest=$(flux push artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --path k8s \
+            --source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --revision "main@sha1:$GITHUB_SHA" \
+            --output json | jq -r .digest)
           # "latest" is the tag the cluster follows. It only ever moves to the newest
           # commit on main, so a run that finishes late, or is run again, cannot put
           # older code back.
           if [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" ]; then
             flux tag artifact "oci://$REGISTRY/manifests/lamp:$GITHUB_SHA" --tag latest
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::main has moved on: $GITHUB_SHA was published, and latest was left alone."
           fi
+
+  # Publishing ends when the bundle is in the registry. This waits for the cluster to say it
+  # runs it, then looks at what a visitor and the telemetry pipeline would see. Microsoft's
+  # Bicep pipelines guidance ends with "test your resources after each deployment":
+  # https://learn.microsoft.com/training/modules/test-bicep-code-using-github-actions/
+  verify:
+    name: Verify rollout
+    needs: publish
+    if: needs.publish.outputs.digest != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: rg-lamp-web-app-dev
+      DIGEST: ${{ needs.publish.outputs.digest }}
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The cluster is switched off overnight. Flux cannot sync a cluster that is not running,
+      # and the next start applies whatever latest is by then.
+      - name: Find the cluster and the site
+        id: target
+        run: |
+          cluster=$(az aks list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv)
+          power=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$cluster" --query powerState.code --output tsv)
+          host=$(az network public-ip list --resource-group "$RESOURCE_GROUP" --query "[?dnsSettings!=null].dnsSettings.fqdn | [0]" --output tsv)
+          echo "cluster=$cluster" >> "$GITHUB_OUTPUT"
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "running=$([ "$power" = Running ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          [ "$power" = Running ] || echo "::notice::The cluster is $power: nothing to verify. The next start applies this bundle."
+
+      # sourceSyncedCommitId is "latest@sha256:<digest>" of the bundle Flux last pulled
+      - name: Wait for Flux to apply this bundle
+        if: steps.target.outputs.running == 'true'
+        env:
+          CLUSTER: ${{ steps.target.outputs.cluster }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          url="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.ContainerService/managedClusters/$CLUSTER/providers/Microsoft.KubernetesConfiguration/fluxConfigurations/lamp?api-version=2025-04-01"
+          for _ in $(seq 1 60); do
+            state=$(az rest --method get --url "$url" --query "[properties.sourceSyncedCommitId, properties.complianceState]" --output tsv | tr '\n' ' ')
+            echo "$state"
+            case "$state" in *"$DIGEST"*Compliant*) exit 0 ;; esac
+            sleep 15
+          done
+          echo "::error::Flux did not report $DIGEST as applied and compliant within 15 minutes."
+          exit 1
+
+      - name: The site answers, and reaches its database
+        if: steps.target.outputs.running == 'true'
+        env:
+          HOST: ${{ steps.target.outputs.host }}
+        run: |
+          curl --fail --silent --show-error --retry 30 --retry-delay 10 --retry-all-errors "https://$HOST/health" \
+            | tee /dev/stderr | grep -q '"database":"postgresql"'
+
+      # Telemetry is a preview feature, and whether this login may read the workspace has not been
+      # tried: a failure here is a warning, not a red build.
+      - name: Spans reach Application Insights
+        if: steps.target.outputs.running == 'true'
+        continue-on-error: true
+        env:
+          HOST: ${{ steps.target.outputs.host }}
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt extension.dynamic_install_allow_preview=true > /dev/null
+          component=$(az resource list --resource-group "$RESOURCE_GROUP" --resource-type Microsoft.Insights/components --query "[0].id" --output tsv)
+          workspace=$(az rest --method get --url "https://management.azure.com${component}?api-version=2025-01-23-preview" --query properties.WorkspaceResourceId --output tsv)
+          customer=$(az rest --method get --url "https://management.azure.com${workspace}?api-version=2025-02-01" --query properties.customerId --output tsv)
+          for _ in $(seq 1 12); do
+            for _ in $(seq 1 10); do curl --silent --output /dev/null "https://$HOST/api/v1/lamp/status"; done
+            n=$(az monitor log-analytics query --workspace "$customer" --output tsv \
+              --analytics-query "OTelSpans | where TimeGenerated > ago(10m) and ServiceName == 'lamp-app' | count" | head -1 | cut -f1)
+            echo "spans in the last 10 minutes: ${n:-0}"
+            [ "${n:-0}" -gt 0 ] && exit 0
+            sleep 30
+          done
+          echo "::warning::No lamp-app spans reached Application Insights. If this is a fresh deploy, the pods need a restart to pick up the OTEL_* settings."
+          exit 1
