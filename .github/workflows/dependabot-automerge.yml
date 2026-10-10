@@ -1,7 +1,13 @@
 name: Dependabot auto-merge
 
-# Every Dependabot pull request is set to merge itself as soon as the required checks
-# pass (the "Tests" check, enforced by the ruleset on main). Nobody approves or clicks.
+# Dependabot pull requests for Python, npm and Docker are set to merge themselves as soon as
+# the required checks pass (the "Tests" check, enforced by the ruleset on main). Nobody
+# approves or clicks.
+#
+# Updates to GitHub Actions are the exception: they wait for a person. Actions run with this
+# repository's secrets and Azure login, and GitHub's guidance is to audit an action's source
+# before using a new version (https://docs.github.com/en/actions/reference/security/secure-use).
+# The Tests check does not exercise those jobs, so passing it says little about the change.
 
 on:
   pull_request_target:
@@ -19,19 +25,14 @@ jobs:
       pull-requests: write
     env:
       PR_URL: ${{ github.event.pull_request.html_url }}
-      # GitHub never lets the built-in token merge a change to a workflow file. Updates to
-      # the actions used in .github/workflows therefore need a token of your own, saved as
-      # the DEPENDABOT_MERGE_TOKEN secret: fine-grained, this repository only, with
-      # Contents, Pull requests and Workflows set to "Read and write".
-      MERGE_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN }}
-      TOUCHES_WORKFLOWS: ${{ startsWith(github.event.pull_request.head.ref, 'dependabot/github_actions/') }}
+      IS_ACTIONS_UPDATE: ${{ startsWith(github.event.pull_request.head.ref, 'dependabot/github_actions/') }}
     steps:
       - name: Merge once the required checks pass
-        if: env.MERGE_TOKEN != '' || env.TOUCHES_WORKFLOWS == 'false'
+        if: env.IS_ACTIONS_UPDATE == 'false'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
-          GH_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Explain why this one is waiting
-        if: env.MERGE_TOKEN == '' && env.TOUCHES_WORKFLOWS == 'true'
-        run: echo "::notice::This update changes workflow files, which the built-in token is not allowed to merge. Add the DEPENDABOT_MERGE_TOKEN secret (see the comments in this workflow) and these merge themselves too. Until then, merge this one by hand."
+        if: env.IS_ACTIONS_UPDATE == 'true'
+        run: echo "::notice::This updates GitHub Actions, which run with this repository's secrets. Read what changed in the action, then merge it by hand."
