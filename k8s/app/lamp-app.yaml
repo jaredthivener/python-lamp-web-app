@@ -241,10 +241,12 @@ spec:
   destination:
     applicationInsightsConnectionString: "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
 ---
-# The OTLP agent listens on a port of the node the pod runs on. A NetworkPolicy ipBlock
-# can never match a node under Cilium (https://learn.microsoft.com/azure/aks/azure-cni-powered-by-cilium),
-# so the NetworkPolicy above blocks it, and this allows it. The ports are the defaults:
-# 28331 for traces and logs, 28333 for metrics. Allow rules add up across policies.
+# AKS's OTLP agents listen on host ports of the node (28331 for traces and logs, 28333
+# for metrics), but under Cilium a connection to a host port is carried to the agent's pod,
+# so a rule for the node itself (the host and remote-node entities) never matches it:
+# measured on the cluster, the connections timed out. The rules name the agent pods and
+# the container ports the host ports lead to (ama-logs 28331 -> 4319, ama-metrics-node
+# 28333 -> 56681). Allow rules add up across policies, so the NetworkPolicy above is unchanged.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -255,12 +257,19 @@ spec:
     matchLabels:
       app: lamp-app
   egress:
-    - toEntities:
-        - host
-        - remote-node
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            component: ama-logs-agent
       toPorts:
         - ports:
-            - port: "28331"
+            - port: "4319"
               protocol: TCP
-            - port: "28333"
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            dsName: ama-metrics-node
+      toPorts:
+        - ports:
+            - port: "56681"
               protocol: TCP
