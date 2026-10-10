@@ -68,6 +68,9 @@ param logAnalyticsWorkspaceId string
 @description('Resource ID of the data collection rule for container logs')
 param containerInsightsRuleId string
 
+@description('Resource ID of the data collection rule Application Insights routes the app\'s OpenTelemetry with')
+param applicationInsightsRuleId string
+
 @description('Values substituted for the placeholders, written like \${LAMP_HOST}, in the manifests under k8s/app')
 @secure()
 param manifestValues object
@@ -379,6 +382,16 @@ resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAsso
   scope: aks
   properties: {
     dataCollectionRuleId: containerInsightsRuleId
+  }
+}
+
+// Measured on the cluster: with only the two associations above, the OTLP agent never
+// listened (connections to its port were refused). This one gives it the pipeline.
+resource applicationInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+  name: 'ApplicationInsightsOtlp'
+  scope: aks
+  properties: {
+    dataCollectionRuleId: applicationInsightsRuleId
   }
 }
 

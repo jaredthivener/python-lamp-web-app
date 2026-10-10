@@ -177,6 +177,7 @@ module aks 'modules/compute/aks.bicep' = {
     prometheusRuleId: monitoring.outputs.prometheusRuleId
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     containerInsightsRuleId: monitoring.outputs.containerInsightsRuleId
+    applicationInsightsRuleId: monitoring.outputs.applicationInsightsRuleId
     // Everything the manifests in k8s/ need to know about this deployment
     manifestValues: {
       LAMP_HOST: network.outputs.hostName

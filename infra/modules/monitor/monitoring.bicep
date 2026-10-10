@@ -214,6 +214,9 @@ output containerInsightsRuleId string = containerInsightsRule.id
 @description('The name of the Application Insights resource')
 output applicationInsightsName string = applicationInsights.name
 
+@description('The rule Azure created to route the app\'s OpenTelemetry. The cluster has to be associated with it, or its agent never starts listening for OTLP.')
+output applicationInsightsRuleId string = applicationInsights.properties.DataCollectionRuleResourceId
+
 @description('The resource ID of the Application Insights resource')
 output applicationInsightsId string = applicationInsights.id
 
