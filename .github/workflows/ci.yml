@@ -93,6 +93,11 @@ jobs:
     permissions:
       contents: read
       id-token: write # lets the job prove to Azure which repository and branch it is: no stored password
+    # One publish at a time. A run that is waiting is replaced by a newer one, which is right:
+    # only the newest commit on main is ever tagged latest.
+    concurrency:
+      group: publish
+      cancel-in-progress: false
     env:
       RESOURCE_GROUP: rg-lamp-web-app-dev
 
