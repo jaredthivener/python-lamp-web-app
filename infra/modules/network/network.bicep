@@ -20,7 +20,7 @@ param location string
 @description('Tags to apply to the resources')
 param tags object = {}
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2026-01-01' = {
   name: virtualNetworkName
   location: location
   tags: tags
@@ -76,7 +76,7 @@ resource postgresDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLi
 
 // Owned here rather than by the cluster, so the address and its name survive the
 // cluster being stopped, upgraded or rebuilt.
-resource publicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
+resource publicIp 'Microsoft.Network/publicIPAddresses@2026-01-01' = {
   name: publicIpName
   location: location
   tags: tags

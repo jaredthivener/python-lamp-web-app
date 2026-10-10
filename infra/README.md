@@ -188,6 +188,8 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 - Managed Prometheus and Container Insights; the app's OpenTelemetry goes to Application Insights through AKS's own agent, and the preview features it needs are registered per Microsoft's article
 - Flux with its default multi-tenancy lockdown
 
+**API versions.** Each resource uses the newest GA version that both Azure Resource Manager accepts (`az deployment sub validate` is the authority: it rejects versions the resource provider does not have) and the Bicep type data covers, so the compiler can still check the properties. Where the newest GA version has no type data yet (the dashboard, `2026-09-01`), the newest one is used and the compiler warns. Preview versions appear only where no GA version has what is needed (Application Insights with workspace ingestion, managed identities).
+
 **Not followed, and why**
 
 | Microsoft's guidance | Here | Why |
@@ -202,8 +204,9 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | LocalDNS on node pools | Cluster DNS only | Not tried; it changes where pods send DNS queries, which the egress policy would have to allow |
 | Least privilege for the database | The app is the server's Entra administrator | A lesser role takes SQL run from inside the network, which Bicep cannot do |
 | Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
+| Control plane diagnostic settings (kube-audit and the other logs), and Defender for Containers | Neither | Not wanted for this environment: the log volume and per-vCPU price are not worth it for a practice cluster |
 | A NAT gateway for outbound traffic | The load balancer | $32/month |
-| Preview features are not for production workloads | AKS OTLP application monitoring (preview), on the preview AKS API version | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The Bicep uses `2025-09-02-preview` for the cluster because the GA API has no OTLP switch |
+| Preview features are not for production workloads | AKS OTLP application monitoring, which Microsoft still labels preview | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The cluster itself is on a GA API version (`2026-06-01`), which has the OTLP switches |
 | Microsoft documents creating the OTLP Application Insights resource in the portal only | `Microsoft.Insights/components@2025-01-23-preview` with `AzureMonitorWorkspaceIngestionMode: Enabled` | The properties come from the REST API specification, not from a Learn article |
 
 ## 🔁 Checked against Flux's and Microsoft's GitOps guidance

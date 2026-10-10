@@ -34,7 +34,7 @@ var jobs = [
   { action: 'stop', time: stopTime }
 ]
 
-resource aks 'Microsoft.ContainerService/managedClusters@2026-05-01' existing = {
+resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' existing = {
   name: clusterName
 }
 
