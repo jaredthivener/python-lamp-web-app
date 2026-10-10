@@ -1,0 +1,15 @@
+# Sends this namespace's pods' OpenTelemetry to Application Insights. AKS's webhook sees
+# this and sets the OTEL_EXPORTER_OTLP_* variables on pods when they are created; the
+# SDK is already in the app, so nothing is injected (an empty platform list is what
+# Microsoft calls autoconfiguration). Only works with the AKS OTLP preview enabled.
+# https://learn.microsoft.com/azure/azure-monitor/containers/kubernetes-open-protocol
+apiVersion: monitor.azure.com/v1
+kind: Instrumentation
+metadata:
+  name: default
+  namespace: lamp
+spec:
+  settings:
+    autoInstrumentationPlatforms: []
+  destination:
+    applicationInsightsConnectionString: "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
