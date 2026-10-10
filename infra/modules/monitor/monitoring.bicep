@@ -167,25 +167,6 @@ resource applicationInsights 'Microsoft.Insights/components@2025-01-23-preview' 
   }
 }
 
-// The Grafana dashboard for the app's HTTP metrics, saved as an Azure resource. The tag is
-// what lists it under the Application Insights resource's "Dashboards with Grafana".
-// https://learn.microsoft.com/azure/azure-monitor/app/grafana-dashboards
-// The same JSON imports into any Grafana: pick the Prometheus data source in its first dropdown.
-resource lampDashboard 'Microsoft.Dashboard/dashboards@2025-09-01-preview' = {
-  name: 'lamp-api'
-  location: location
-  tags: union(tags, { GrafanaDashboardResourceType: 'microsoft.insights/components' })
-  properties: {}
-}
-
-resource lampDashboardDefinition 'Microsoft.Dashboard/dashboards/dashboardDefinitions@2025-09-01-preview' = {
-  parent: lampDashboard
-  name: 'default'
-  properties: {
-    serializedData: string(loadJsonContent('../../dashboards/lamp-api.json'))
-  }
-}
-
 // Owning the subscription is not enough to read metric data: that takes this role
 resource metricsReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(metricsReaderObjectId)) {
   name: guid(monitorWorkspace.id, metricsReaderObjectId, 'Monitoring Data Reader')
