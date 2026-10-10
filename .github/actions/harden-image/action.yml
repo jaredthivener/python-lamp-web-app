@@ -62,6 +62,10 @@ runs:
         TRIVY_PKG_TYPES: os
       with:
         image-ref: ${{ inputs.image }}
+        # The action's own default is Trivy v0.70.0; v0.75.0 is the latest release (2026-10-01).
+        # Bumping it is a change here, in both scans, and Dependabot does not see it.
+        version: v0.75.0
+        scanners: vuln
         format: json
         output: ${{ runner.temp }}/trivy-before.json
         ignore-unfixed: true
@@ -89,6 +93,8 @@ runs:
         TRIVY_PKG_TYPES: os
       with:
         image-ref: ${{ inputs.image }}
+        version: v0.75.0
+        scanners: vuln
         ignore-unfixed: true
         severity: HIGH,CRITICAL
         exit-code: "1"
