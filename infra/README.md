@@ -163,6 +163,16 @@ Redeploying the Bicep needs the cluster running; the workflow starts it if the s
 
 **What a start looks like.** Stopping the cluster discards its nodes, so each morning three new ones boot and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
 
+## ⏪ Rolling back
+
+**The app and its manifests** (the usual case). Every publish leaves a bundle in the registry tagged with its commit, and the image it points at; the cluster follows the tag `latest`. Run **Actions > Roll back the app** with the full SHA of the last good commit on `main`. It checks that the bundle and the image exist, moves `latest` to that bundle, and waits for Flux to report it applied. The registry is Basic SKU, which has no retention policy, so old bundles stay until someone deletes them.
+
+It does not change `main`: the next merge publishes again and moves `latest` forward. Revert the bad commit in Git too, or that merge puts it back.
+
+**The infrastructure.** There is no automated rollback. Revert the commit and run **Deploy Azure Infrastructure** (about ten minutes). An infrastructure rollback has not been tried.
+
+Tested on the live registry: the lookups find an existing commit's bundle and image and fail for an unknown one, and `flux tag artifact` pointed a scratch tag at an older bundle without moving `latest` (the scratch tag was then removed). The workflow itself has not run.
+
 ## ⚖️ Checked against Microsoft's guidance
 
 The setup was compared with Microsoft's AKS best-practice articles ([reliability](https://learn.microsoft.com/azure/aks/best-practices-app-cluster-reliability), [cluster security](https://learn.microsoft.com/azure/aks/operator-best-practices-cluster-security), [networking](https://learn.microsoft.com/azure/aks/operator-best-practices-network), [workload identity](https://learn.microsoft.com/azure/aks/workload-identity-overview)).
