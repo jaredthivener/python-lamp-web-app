@@ -31,10 +31,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Run lamp physics tests
         run: npm test
@@ -44,7 +44,7 @@ jobs:
       # fills them. A placeholder missing from this list fails here; one missing from
       # manifestValues in infra/main.bicep fails on the cluster.
       - name: Install the Flux CLI
-        uses: fluxcd/flux2/action@v2.9.6
+        uses: fluxcd/flux2/action@b9c17924adb533d3617ec7de97a7b0f4acc07b39 # v2.9.6
         with:
           plugins: schema@0.15.0
 
@@ -98,10 +98,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to Azure
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -128,7 +128,7 @@ jobs:
 
       - name: Install the Flux CLI
         if: steps.registry.outputs.server != ''
-        uses: fluxcd/flux2/action@v2.9.6
+        uses: fluxcd/flux2/action@b9c17924adb533d3617ec7de97a7b0f4acc07b39 # v2.9.6
 
       - name: Publish the manifests
         if: steps.registry.outputs.server != ''
