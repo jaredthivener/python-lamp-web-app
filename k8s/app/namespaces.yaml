@@ -1,6 +1,11 @@
 # Pod Security Admission is built into Kubernetes: a namespace label decides which
 # pods the API server will accept there. "restricted" is the strictest profile:
 # non-root, no privilege escalation, no added capabilities.
+# Neither is ever deleted by Flux's garbage collection (the prune annotation below). Deleting
+# a namespace deletes everything in it, and the namespaces change owner when the manifests are
+# split across ordered Kustomizations: tested on Flux v2.9.6, a namespace missing from its
+# owner's source is deleted unless it carries this annotation.
+# https://fluxcd.io/flux/components/kustomize/kustomizations/#prune
 # lamp: the application (lamp-app.yaml)
 apiVersion: v1
 kind: Namespace
@@ -8,6 +13,8 @@ metadata:
   name: lamp
   labels:
     pod-security.kubernetes.io/enforce: restricted
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 ---
 # gateway: the public Gateway and its TLS certificate (public-gateway.yaml). The only
 # pods that ever run here are cert-manager's short-lived challenge responders; the
@@ -18,3 +25,5 @@ metadata:
   name: gateway
   labels:
     pod-security.kubernetes.io/enforce: restricted
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
