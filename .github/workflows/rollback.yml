@@ -1,0 +1,96 @@
+name: Roll back the app
+
+# Runs an earlier commit's app again, without touching Git or the infrastructure: every
+# publish leaves a bundle in the registry tagged with its commit (and the image it points at),
+# and the cluster follows the tag "latest". This moves that tag back and waits for Flux to
+# apply it. Microsoft's Well-Architected guidance asks for a way to recover from a faulty
+# deployment decided in advance (OE:11):
+# https://learn.microsoft.com/azure/well-architected/operational-excellence/safe-deployments
+#
+# It does not change main. The next merge publishes again and moves "latest" forward, so
+# revert the bad commit in Git as well, or that merge puts it back.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Full SHA of the commit on main to run again (its bundle must still be in the registry)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-lamp-web-app-dev
+  COMMIT: ${{ github.event.inputs.commit }}
+
+jobs:
+  rollback:
+    name: Move latest back
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: azure-dev
+      cancel-in-progress: false
+
+    steps:
+      - name: The commit is a full SHA
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Give the full 40-character commit SHA."; exit 1; }
+
+      - name: Log in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install the Flux CLI
+        uses: fluxcd/flux2/action@b9c17924adb533d3617ec7de97a7b0f4acc07b39 # v2.9.6
+
+      # Both the bundle and the image it names have to exist, or the cluster would be pointed at
+      # something it cannot pull
+      - name: Find the bundle and image for that commit
+        id: found
+        run: |
+          registry=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv)
+          [ -n "$registry" ] || { echo "::error::There is no registry in $RESOURCE_GROUP."; exit 1; }
+          digest=$(az acr manifest show-metadata --registry "$registry" --name "manifests/lamp:$COMMIT" --query digest --output tsv) \
+            || { echo "::error::No bundle is tagged $COMMIT. See the registry's manifests/lamp repository for the tags that exist."; exit 1; }
+          az acr manifest show-metadata --registry "$registry" --name "lamp-app:$COMMIT" --query digest --output tsv > /dev/null \
+            || { echo "::error::The bundle exists but the image lamp-app:$COMMIT does not."; exit 1; }
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Move latest to that bundle
+        env:
+          REGISTRY: ${{ steps.found.outputs.registry }}
+        run: |
+          az acr login --name "$REGISTRY"
+          flux tag artifact "oci://$REGISTRY.azurecr.io/manifests/lamp:$COMMIT" --tag latest
+
+      # sourceSyncedCommitId is "latest@sha256:<digest>" of the bundle Flux last pulled
+      - name: Wait for Flux to apply it
+        env:
+          DIGEST: ${{ steps.found.outputs.digest }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          cluster=$(az aks list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv)
+          power=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$cluster" --query powerState.code --output tsv)
+          if [ "$power" != Running ]; then
+            echo "::notice::The cluster is $power. latest now points at $COMMIT; the next start applies it."
+            exit 0
+          fi
+          url="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.ContainerService/managedClusters/$cluster/providers/Microsoft.KubernetesConfiguration/fluxConfigurations/lamp?api-version=2025-04-01"
+          for _ in $(seq 1 60); do
+            state=$(az rest --method get --url "$url" --query "[properties.sourceSyncedCommitId, properties.complianceState]" --output tsv | tr '\n' ' ')
+            echo "$state"
+            case "$state" in *"$DIGEST"*Compliant*) echo "Running $COMMIT again."; exit 0 ;; esac
+            sleep 15
+          done
+          echo "::error::Flux did not report $DIGEST as applied and compliant within 15 minutes."
+          exit 1
