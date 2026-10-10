@@ -28,9 +28,8 @@ graph LR
 | `network/network.bicep` | Virtual network, a subnet delegated to PostgreSQL, its private DNS zone, and the static public IP (with a DNS name) the site is served on |
 | `compute/aks.bicep` | The cluster, its role assignments, workload identity federation, and the Flux extension and configuration |
 | `compute/schedule.bicep` | Two Logic Apps that start the cluster in the morning and stop it in the evening |
-| `database/postgresql.bicep` | PostgreSQL flexible server: private, Entra sign-in only |
 | `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs |
-| Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (three times: the control plane, the lamp pods, and Flux each get their own identity) and `avm/res/container-registry/registry` (for the app image and the manifest bundle). Their defaults lean towards production (Premium registry, zone redundancy), so the cost choices are written out in the calls |
+| Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (three times: the control plane, the lamp pods, and Flux each get their own identity) `avm/res/container-registry/registry` (for the app image and the manifest bundle) and `avm/res/db-for-postgre-sql/flexible-server` (private, Entra sign-in only). Their defaults lean towards production (Premium registry, zone-redundant database with geo backups and threat protection), so the cost choices are written out in the calls |
 
 **The cluster**
 
