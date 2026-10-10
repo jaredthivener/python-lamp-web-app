@@ -95,7 +95,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Success rate",
+      "title": "Success rate (excl. event stream)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -109,7 +109,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (1 - (sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "100 * (1 - (sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -152,7 +152,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "p95 latency",
+      "title": "p95 latency (excl. event stream)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -166,7 +166,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -392,7 +392,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Latency percentiles",
+      "title": "Latency percentiles (excl. event stream)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -406,7 +406,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "datasource": {
             "type": "prometheus",
@@ -415,7 +415,7 @@
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
@@ -424,7 +424,7 @@
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
@@ -442,7 +442,7 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "p95 latency by route",
+      "title": "p95 latency by route (excl. event stream)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -456,7 +456,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\"}[$__rate_interval])))",
           "legendFormat": "{{http_route}}",
           "datasource": {
             "type": "prometheus",
@@ -474,7 +474,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Server errors (5xx) and failed requests by route",
+      "title": "Errors by route (excl. event stream, which ends in ConnectionError when a page closes)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -488,7 +488,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_response_status_code=~\"5..\"}[$__rate_interval]))",
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", http_response_status_code=~\"5..\"}[$__rate_interval]))",
           "legendFormat": "5xx {{http_route}}",
           "datasource": {
             "type": "prometheus",
@@ -497,7 +497,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (http_route, error_type) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", error_type!=\"\"}[$__rate_interval]))",
+          "expr": "sum by (http_route, error_type) (rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=~\"$route\", http_route!=\"/api/v1/lamp/events\", error_type!=\"\"}[$__rate_interval]))",
           "legendFormat": "{{error_type}} {{http_route}}",
           "datasource": {
             "type": "prometheus",
@@ -609,6 +609,81 @@
           }
         }
       ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Event streams opened / s",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval]))",
+          "legendFormat": "streams opened",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "description": "A stream is counted when the page closes it (the request ends then)."
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "How long pages keep the event stream open",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name=\"lamp-app\", http_route=\"/api/v1/lamp/events\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "description": "Not latency: the time between a page opening the live stream and closing it. With explicit buckets (FastAPI's default, as in a local Grafana) visits longer than 10 s all read as 10 s; Azure's exponential histograms have no such cap."
     }
   ]
 }
