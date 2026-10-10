@@ -21,6 +21,9 @@ metadata:
   namespace: lamp
 spec:
   replicas: 2
+  # Each rollout leaves its ReplicaSet behind, scaled to 0, for `kubectl rollout undo`. The default
+  # keeps 10. Rollback here is the Roll back workflow (it moves the bundle), so two are plenty.
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: lamp-app
