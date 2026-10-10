@@ -1,0 +1,64 @@
+name: Deploy dashboard
+
+# The Grafana dashboard is the part of the infrastructure that changes most, and it needs
+# nothing from the cluster, so it has a pipeline of its own: the whole Deploy workflow
+# (virtual network, PostgreSQL, the cluster and its Flux extension) takes about ten minutes.
+# Microsoft's guidance is one IaC pipeline per layer, aligned to how often its resources change:
+# https://learn.microsoft.com/azure/well-architected/operational-excellence/infrastructure-as-code-design
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/dashboards/**"
+      - ".github/workflows/dashboard-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-lamp-web-app-dev
+
+jobs:
+  dashboard:
+    name: Deploy the dashboard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # the Azure login: this job's OIDC subject is repo:<owner>/<repo>:ref:refs/heads/main
+    # Same group as the Deploy and Destroy workflows, so none of them runs while another does
+    concurrency:
+      group: azure-dev
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check the dashboard is valid JSON
+        run: python3 -m json.tool infra/dashboards/lamp-api.json > /dev/null
+
+      - name: Log in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the resource group
+        id: group
+        run: |
+          if [ "$(az group exists --name "$RESOURCE_GROUP")" = true ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::There is no $RESOURCE_GROUP: nothing to deploy to. Run the Deploy Azure Infrastructure workflow first."
+          fi
+
+      - name: Validate
+        if: steps.group.outputs.exists == 'true'
+        run: az deployment group validate --resource-group "$RESOURCE_GROUP" --template-file infra/dashboards/dashboard.bicep --only-show-errors --output none
+
+      - name: Deploy
+        if: steps.group.outputs.exists == 'true'
+        run: az deployment group create --resource-group "$RESOURCE_GROUP" --name lamp-dashboard --template-file infra/dashboards/dashboard.bicep --only-show-errors --output none
