@@ -32,7 +32,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.schema import CreateIndex
 
 logger = logging.getLogger(__name__)
@@ -203,31 +203,34 @@ class Store:
         """
         now = datetime.now(timezone.utc)
         rested = lamp_status.c.last_updated <= now - cooldown if cooldown else true()
-        with self.engine.begin() as conn:
-            # One statement flips and reads back, so concurrent pulls can never both see "off".
-            is_on = conn.execute(
-                update(lamp_status)
-                .where(lamp_status.c.id == 1, rested)
-                .values(
-                    is_on=~lamp_status.c.is_on,
-                    last_updated=now,
-                    client_info=f"Session: {session_id or 'unknown'}, IP: {ip_address or 'unknown'}",
+        with self.engine.connect() as conn:
+            with conn.begin():
+                # One statement flips and reads back, so concurrent pulls can never both see "off".
+                is_on = conn.execute(
+                    update(lamp_status)
+                    .where(lamp_status.c.id == 1, rested)
+                    .values(
+                        is_on=~lamp_status.c.is_on,
+                        last_updated=now,
+                        client_info=f"Session: {session_id or 'unknown'}, IP: {ip_address or 'unknown'}",
+                    )
+                    .returning(lamp_status.c.is_on)
+                ).scalar_one_or_none()
+                if is_on is None:
+                    raise TooSoon
+                conn.execute(
+                    insert(lamp_activities).values(
+                        action="on" if is_on else "off",
+                        timestamp=now,
+                        session_id=session_id,
+                        user_agent=user_agent,
+                        ip_address=ip_address,
+                        previous_state="off" if is_on else "on",
+                    )
                 )
-                .returning(lamp_status.c.is_on)
-            ).scalar_one_or_none()
-            if is_on is None:
-                raise TooSoon
-            conn.execute(
-                insert(lamp_activities).values(
-                    action="on" if is_on else "off",
-                    timestamp=now,
-                    session_id=session_id,
-                    user_agent=user_agent,
-                    ip_address=ip_address,
-                    previous_state="off" if is_on else "on",
-                )
-            )
-        return self.snapshot()
+            # Committed, so the row lock is released before the counts run; same connection, so no
+            # second checkout
+            return self._read(conn)
 
     @tracer.start_as_current_span("store.pulse")
     def pulse(self, replica: str, viewers: int) -> tuple[Optional[datetime], int]:
@@ -272,35 +275,38 @@ class Store:
     @tracer.start_as_current_span("store.snapshot")
     def snapshot(self) -> Snapshot:
         """Read the lamp plus the counters shown beside it"""
+        with self.engine.connect() as conn:
+            return self._read(conn)
+
+    @staticmethod
+    def _read(conn: Connection) -> Snapshot:
+        """snapshot() on a connection the caller holds, so a toggle reads what it just wrote"""
         midnight = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         today = lamp_activities.c.timestamp >= midnight
-        with self.engine.connect() as conn:
-            is_on, changed_at = conn.execute(
-                select(lamp_status.c.is_on, lamp_status.c.last_updated).where(
-                    lamp_status.c.id == 1
-                )
-            ).one()
-            # ponytail: the lifetime count still reads every row, 67 ms at 3M rows on Postgres 18
-            # (EXPLAIN ANALYZE); keep a running counter once that shows up in the store.snapshot span.
-            lifetime = conn.execute(
-                select(func.count()).select_from(lamp_activities)
-            ).scalar_one()
-            # Filtered by WHERE, not by FILTER: FILTER made Postgres sort every row's session_id
-            # (4.5 s at 3M rows), where this reads only today's through activities_by_time.
-            today_count, visitors = conn.execute(
-                select(
-                    func.count(), func.count(lamp_activities.c.session_id.distinct())
-                )
-                .select_from(lamp_activities)
-                .where(today)
-            ).one()
-            recent = conn.execute(
-                select(lamp_activities.c.action, lamp_activities.c.timestamp)
-                .order_by(lamp_activities.c.id.desc())
-                .limit(5)
-            ).all()
+        is_on, changed_at = conn.execute(
+            select(lamp_status.c.is_on, lamp_status.c.last_updated).where(
+                lamp_status.c.id == 1
+            )
+        ).one()
+        # ponytail: the lifetime count still reads every row, 67 ms at 3M rows on Postgres 18
+        # (EXPLAIN ANALYZE); keep a running counter once that shows up in the store.snapshot span.
+        lifetime = conn.execute(
+            select(func.count()).select_from(lamp_activities)
+        ).scalar_one()
+        # Filtered by WHERE, not by FILTER: FILTER made Postgres sort every row's session_id
+        # (4.5 s at 3M rows), where this reads only today's through activities_by_time.
+        today_count, visitors = conn.execute(
+            select(func.count(), func.count(lamp_activities.c.session_id.distinct()))
+            .select_from(lamp_activities)
+            .where(today)
+        ).one()
+        recent = conn.execute(
+            select(lamp_activities.c.action, lamp_activities.c.timestamp)
+            .order_by(lamp_activities.c.id.desc())
+            .limit(5)
+        ).all()
         return Snapshot(
             is_on=is_on,
             changed_at=_utc(changed_at or midnight),
