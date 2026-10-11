@@ -77,5 +77,17 @@ jobs:
           echo "::error::The workspace is still there after five minutes."
           exit 1
 
+      # --no-wait returns once Azure has accepted the request, which is seconds, not once the
+      # group is gone (the AKS cluster takes several minutes). Polling is what makes a green
+      # run mean the environment is deleted. A poll loop, not `az group wait`, for the same
+      # reason as the workspace above: the CLI's long-running commands sometimes crash.
       - name: Delete resource group
-        run: az group delete --name rg-lamp-web-app-${{ env.AZURE_ENV_NAME }} --yes --no-wait
+        run: |
+          group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
+          az group delete --name "$group" --yes --no-wait
+          for _ in $(seq 1 120); do
+            [ "$(az group exists --name "$group")" = "false" ] && exit 0
+            sleep 15
+          done
+          echo "::error::$group still exists after 30 minutes: $(az group show --name "$group" --query properties.provisioningState --output tsv)"
+          exit 1
