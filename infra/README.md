@@ -20,14 +20,12 @@ graph LR
     FLUX -->|pulls| ACR[Container Registry]
     CI[GitHub Actions] -->|pushes| ACR
     AKS -.->|metrics, logs| MON[Azure Monitor]
-    SCHED[Logic Apps] -.->|start / stop| AKS
 ```
 
 | Module | What it creates |
 | --- | --- |
 | `network/network.bicep` | Virtual network, a subnet delegated to PostgreSQL, its private DNS zone, and the static public IP (with a DNS name) the site is served on |
 | `compute/aks.bicep` | The cluster, its role assignments, workload identity federation, and the Flux extension and configuration |
-| `compute/schedule.bicep` | Two Logic Apps that start the cluster in the morning and stop it in the evening |
 | `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs |
 | Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (three times: the control plane, the lamp pods, and Flux each get their own identity) `avm/res/container-registry/registry` (for the app image and the manifest bundle) and `avm/res/db-for-postgre-sql/flexible-server` (private, Entra sign-in only). Their defaults lean towards production (Premium registry, zone-redundant database with geo backups and threat protection), so the cost choices are written out in the calls |
 
@@ -96,7 +94,7 @@ Prices are West US 3, October 2026.
 | Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
 | **Total** | **about $120** |
 
-- **The schedule is what makes this fit.** Three nodes around the clock would be $201 for nodes alone. The cluster runs 09:00-17:00 US Eastern; change `clusterStartTime`, `clusterStopTime` or `scheduleTimeZone` in `main.bicepparam` and redeploy. Each extra hour a day adds about $8 a month. The site is offline while the cluster is stopped.
+- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.28 an hour ($201 a month), and the rest of the table about $0.07 an hour. The table above is that stack up 8 hours a day for a month.
 - **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month.
 - **One charge to check on your first bill.** Azure's price list gained an AKS "free tier infrastructure" meter of $0.05/hour dated 2026-10-01 that the documentation does not describe. If it applies it adds up to $36 a month.
 - **Spot nodes are not an option here.** Visual Studio (MSDN) subscriptions cannot create spot VMs. On a pay-as-you-go subscription the same node costs $0.017/hour as spot.
@@ -135,7 +133,7 @@ kubectl -n lamp logs -l app=lamp-app -f
 kubectl -n gateway get gateway public-gateway
 kubectl -n envoy-gateway-system get pods -l gateway.envoyproxy.io/owning-gateway-name=public-gateway
 
-# Keep the cluster up late, or bring it up early
+# Pause the cluster between sessions without destroying it (the site is offline meanwhile)
 az aks start --resource-group rg-lamp-web-app-dev --name <cluster>
 az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 ```
@@ -157,9 +155,9 @@ ContainerLogV2
 | order by TimeGenerated desc
 ```
 
-Redeploying the Bicep needs the cluster running; the workflow starts it if the schedule has it stopped.
+Redeploying the Bicep needs the cluster running; the workflow starts it if you stopped it.
 
-**What a start looks like.** Stopping the cluster discards its nodes, so each morning three new ones boot and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
+**What a start looks like.** Stopping the cluster discards its nodes, so starting it (or a fresh deploy) boots three new ones and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
 
 ## ⏪ Rolling back
 

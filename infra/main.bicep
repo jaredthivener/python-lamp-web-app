@@ -42,14 +42,8 @@ param nodeCount int = 3
 @description('Object ID of the Entra user or group that administers the cluster with kubectl. Empty grants nobody.')
 param clusterAdminObjectId string = ''
 
-@description('When the cluster starts each day, as HH:mm in scheduleTimeZone')
-param clusterStartTime string = '09:00'
 
-@description('When the cluster stops each day, as HH:mm in scheduleTimeZone')
-param clusterStopTime string = '17:00'
 
-@description('Windows time zone name the schedule runs in')
-param scheduleTimeZone string = 'Eastern Standard Time'
 
 // Generate unique resource names using resource token
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -234,19 +228,6 @@ module aks 'modules/compute/aks.bicep' = {
       APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
       POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.fqdn!} dbname=${postgresDatabaseName} user=${appIdentity.outputs.name} sslmode=require'
     }
-  }
-}
-
-module schedule 'modules/compute/schedule.bicep' = {
-  name: 'schedule-deployment'
-  scope: resourceGroup
-  params: {
-    clusterName: aks.outputs.clusterName
-    location: location
-    tags: commonTags
-    startTime: clusterStartTime
-    stopTime: clusterStopTime
-    timeZone: scheduleTimeZone
   }
 }
 
