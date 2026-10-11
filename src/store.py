@@ -272,13 +272,15 @@ class Store:
                 )
             )
 
-    @tracer.start_as_current_span("store.snapshot")
     def snapshot(self) -> Snapshot:
         """Read the lamp plus the counters shown beside it"""
         with self.engine.connect() as conn:
             return self._read(conn)
 
     @staticmethod
+    @tracer.start_as_current_span(
+        "store.snapshot"
+    )  # here, so a toggle's own read is traced too
     def _read(conn: Connection) -> Snapshot:
         """snapshot() on a connection the caller holds, so a toggle reads what it just wrote"""
         midnight = datetime.now(timezone.utc).replace(
