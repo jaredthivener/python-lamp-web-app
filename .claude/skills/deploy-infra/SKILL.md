@@ -3,6 +3,7 @@ name: deploy-infra
 description: Deploy the Azure infrastructure from main with the Deploy Azure Infrastructure workflow, wait for it, then verify the live environment
 disable-model-invocation: true
 argument-hint: "[environment, default dev]"
+model: inherit
 allowed-tools:
   - Bash(git fetch *)
   - Bash(git log *)

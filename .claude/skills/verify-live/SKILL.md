@@ -2,6 +2,11 @@
 name: verify-live
 description: Check the deployed Azure environment end to end - cluster running, site answering with PostgreSQL behind it, Flux Kustomizations Ready, lamp pods up, OpenTelemetry endpoints injected. Use after a deploy, or when asked whether the live site works.
 argument-hint: "[environment, default dev]"
+context: fork
+agent: general-purpose
+background: false
+model: haiku
+effort: low
 allowed-tools:
   - Bash(az group exists *)
   - Bash(az aks list *)
@@ -17,7 +22,7 @@ Run every check, then report a table: check, result, and the output that shows i
 1. **It exists.** `az group exists -n <group>`. If `false`, report that nothing is deployed and stop.
 2. **The cluster runs.** `az aks list -g <group> --query "[0].name" -o tsv`, then `az aks show -g <group> -n <cluster> --query "{power:powerState.code,state:provisioningState,kubernetes:kubernetesVersion}"`. Expect `Running` and `Succeeded`.
 3. **The site answers.** `az network public-ip list -g <group> --query "[?dnsSettings.fqdn].dnsSettings.fqdn" -o tsv` gives the host. `curl -s https://<host>/health` should return `{"status":"healthy","database":"postgresql"}`; `degraded` means the pods cannot reach PostgreSQL. After a start or a first deploy the site takes 5 to 14 minutes to answer (infra/README.md, "What a start looks like").
-4. **Flux applied everything.** Write credentials to a file in your scratchpad, never `~/.kube/config`:
+4. **Flux applied everything.** Write credentials to a scratch directory from `mktemp -d`, never to `~/.kube/config`:
    `az aks get-credentials -g <group> -n <cluster> --file <scratch>/aks.kubeconfig`, then
    `sed -i.bak -E 's/^( *- )(devicecode|interactive)$/\1azurecli/' <scratch>/aks.kubeconfig`.
    `kubectl --kubeconfig <scratch>/aks.kubeconfig get kustomizations,ocirepositories,helmreleases -n flux-system`: every row should be `READY True`. Name any that is not, with its message.

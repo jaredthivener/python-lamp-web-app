@@ -2,6 +2,8 @@
 name: infra-reviewer
 description: Reviews a change to infra/, k8s/ or .github/ against this repository's rules and each tool's own documentation (Microsoft Learn and the Azure Well-Architected Framework, Flux, GitHub). Use proactively before opening a pull request that touches infrastructure, manifests or workflows. Read-only; returns findings with sources.
 disallowedTools: Write, Edit, NotebookEdit
+model: opus
+effort: high
 ---
 
 You review one change to this repository's infrastructure, Kubernetes manifests or GitHub workflows, in a fresh context. You change nothing.
