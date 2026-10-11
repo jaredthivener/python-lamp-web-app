@@ -16,14 +16,28 @@ from typing import Any, Optional
 
 import psycopg2  # type: ignore[import-untyped]
 from azure.identity import DefaultAzureCredential
+from opentelemetry import trace
 from psycopg2.extensions import parse_dsn  # type: ignore[import-untyped]
 from pydantic import BaseModel, computed_field
-from sqlalchemy import Boolean, Column, DateTime, Integer, MetaData, String, Table, Text
-from sqlalchemy import create_engine, delete, func, insert, select, true, update
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, MetaData, String
+from sqlalchemy import (
+    Table,
+    Text,
+    create_engine,
+    delete,
+    func,
+    insert,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Engine
+from sqlalchemy.schema import CreateIndex
 
 logger = logging.getLogger(__name__)
+# Gives each database call its own span under the request's, so a slow query shows up as one.
+tracer = trace.get_tracer(__name__)
 
 # Table and column names match the schema already deployed, so no migration is needed.
 metadata = MetaData()
@@ -46,6 +60,13 @@ lamp_activities = Table(
     Column("ip_address", String(45)),
     Column("previous_state", String(10)),
 )
+# What snapshot() counts today's pulls and visitors from. create_all() leaves existing tables
+# alone, so Store.engine creates it on a deployed database too.
+activities_by_time = Index(
+    "ix_lamp_activities_timestamp_session",
+    lamp_activities.c.timestamp,
+    lamp_activities.c.session_id,
+)
 # One row per running replica: how many event streams it has open, and when it last said so.
 lamp_viewers = Table(
     "lamp_viewers",
@@ -57,6 +78,8 @@ lamp_viewers = Table(
 
 # A replica that has not reported for this long is gone, and its viewers with it.
 REPLICA_SILENCE = timedelta(seconds=5)
+# Arbitrary key shared by every replica; only this lock uses it
+INDEX_LOCK = 0x6C616D70  # "lamp"
 ENTRA_POSTGRES_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
 
 
@@ -135,6 +158,12 @@ class Store:
             if not self._ready:
                 metadata.create_all(engine)
                 with engine.begin() as conn:
+                    if engine.dialect.name == "postgresql":
+                        # IF NOT EXISTS alone still races: two replicas starting together both
+                        # try, and one fails on pg_class's unique key. The lock makes them take turns.
+                        conn.execute(select(func.pg_advisory_xact_lock(INDEX_LOCK)))
+                    conn.execute(CreateIndex(activities_by_time, if_not_exists=True))
+                with engine.begin() as conn:
                     if (
                         conn.execute(
                             select(lamp_status.c.id).where(lamp_status.c.id == 1)
@@ -152,12 +181,14 @@ class Store:
                 logger.info("Lamp storage ready (%s)", engine.dialect.name)
             return engine
 
+    @tracer.start_as_current_span("store.ping")
     def ping(self) -> str:
         """Check the database answers; returns its dialect name"""
         with self.engine.connect() as conn:
             conn.execute(select(1))
         return self.engine.dialect.name
 
+    @tracer.start_as_current_span("store.toggle")
     def toggle(
         self,
         session_id: Optional[str] = None,
@@ -198,6 +229,7 @@ class Store:
             )
         return self.snapshot()
 
+    @tracer.start_as_current_span("store.pulse")
     def pulse(self, replica: str, viewers: int) -> tuple[Optional[datetime], int]:
         """
         Report how many streams this replica has open. Returns when the lamp last changed
@@ -223,6 +255,7 @@ class Store:
             ).scalar_one()
         return changed_at and _utc(changed_at), int(room)
 
+    @tracer.start_as_current_span("store.leave")
     def leave(self, replica: str) -> None:
         """This replica is shutting down: stop counting its viewers now, not after the silence"""
         long_gone = lamp_viewers.c.seen_at < datetime.now(timezone.utc) - timedelta(
@@ -236,6 +269,7 @@ class Store:
                 )
             )
 
+    @tracer.start_as_current_span("store.snapshot")
     def snapshot(self) -> Snapshot:
         """Read the lamp plus the counters shown beside it"""
         midnight = datetime.now(timezone.utc).replace(
@@ -248,14 +282,19 @@ class Store:
                     lamp_status.c.id == 1
                 )
             ).one()
-            # ponytail: counts scan lamp_activities on every toggle; index `timestamp` or
-            # keep running counters once the table is large enough for that to show up.
-            lifetime, today_count, visitors = conn.execute(
+            # ponytail: the lifetime count still reads every row, 67 ms at 3M rows on Postgres 18
+            # (EXPLAIN ANALYZE); keep a running counter once that shows up in the store.snapshot span.
+            lifetime = conn.execute(
+                select(func.count()).select_from(lamp_activities)
+            ).scalar_one()
+            # Filtered by WHERE, not by FILTER: FILTER made Postgres sort every row's session_id
+            # (4.5 s at 3M rows), where this reads only today's through activities_by_time.
+            today_count, visitors = conn.execute(
                 select(
-                    func.count(),
-                    func.count().filter(today),
-                    func.count(lamp_activities.c.session_id.distinct()).filter(today),
-                ).select_from(lamp_activities)
+                    func.count(), func.count(lamp_activities.c.session_id.distinct())
+                )
+                .select_from(lamp_activities)
+                .where(today)
             ).one()
             recent = conn.execute(
                 select(lamp_activities.c.action, lamp_activities.c.timestamp)

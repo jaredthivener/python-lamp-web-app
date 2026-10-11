@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, inspect, select, update
 
 import main
 import store as storage
@@ -105,6 +105,27 @@ def test_concurrent_pulls_never_lose_a_flip(store):
     assert actions == ["on", "off"] * 20
 
 
+def test_replicas_starting_together_all_come_up_with_the_index(store):
+    engine = store.engine
+    storage.activities_by_time.drop(engine)  # as the previous version left the table
+    with engine.begin() as conn:  # enough rows that building the index takes a moment
+        conn.execute(
+            storage.lamp_activities.insert(),
+            [{"action": "on", "session_id": f"s{i}"} for i in range(200_000)],
+        )
+    barrier = threading.Barrier(8)
+
+    def start(_):
+        barrier.wait()  # every replica finds the index missing at the same moment
+        storage.Store(engine).engine
+
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(start, range(8)))  # any failure to start is raised here
+    assert [i["name"] for i in inspect(engine).get_indexes("lamp_activities")] == [
+        storage.activities_by_time.name
+    ]
+
+
 def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     path = tmp_path / "deployed.db"
     with closing(sqlite3.connect(path)) as db:
@@ -125,6 +146,10 @@ def test_runs_on_the_tables_the_previous_version_created(tmp_path):
     before = deployed.snapshot()
     assert (before.is_on, before.lifetime, before.today) == (True, 1, 1)
     assert deployed.toggle().is_on is False
+    # create_all() skips tables that exist, so the store has to add the index itself
+    assert [
+        i["name"] for i in inspect(deployed.engine).get_indexes("lamp_activities")
+    ] == [storage.activities_by_time.name]
     deployed.engine.dispose()
 
 
