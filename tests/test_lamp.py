@@ -14,6 +14,10 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, inspect, select, update
 
@@ -114,6 +118,23 @@ def test_a_toggle_uses_one_connection_and_its_answer_includes_the_pull(store):
 
     assert len(checkouts) == 1
     assert (snapshot.lifetime, snapshot.today, snapshot.is_on) == (1, 1, True)
+
+
+def test_a_toggle_traces_its_snapshot_read_under_the_toggle(store):
+    spans = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(spans))
+    trace.set_tracer_provider(
+        provider
+    )  # first and only in this process, so store's tracer uses it
+
+    store.toggle("s")
+
+    by_name = {span.name: span for span in spans.get_finished_spans()}
+    assert (
+        by_name["store.snapshot"].parent.span_id
+        == by_name["store.toggle"].context.span_id
+    )
 
 
 def test_replicas_starting_together_all_come_up_with_the_index(store):
