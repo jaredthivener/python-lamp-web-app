@@ -12,6 +12,11 @@ Rules for `infra/`, `k8s/` and `.github/` are in `.claude/rules/` and load when 
 - `uv run black src tests`: a hook already runs black on every Python file you edit
 - `./start.sh`: the app on port 8000, with its SQLite file at `$TMPDIR/lamp.db`. Jared's own dev server usually holds port 8000, so run yours with a high `PORT`; your `TMPDIR` is already `scratch/tmp`
 
+## Models
+
+- Hand well-defined, verbose work to a subagent on Haiku by passing `model: "haiku"` when you spawn it: Explore searches, reading a failed run's log (`gh run view <id> --log-failed`), scanning long command output. Keep the judgment on the session's model: design, debugging, and deciding what a finding means. Check a Haiku subagent's report yourself before acting on it in a way that is hard to undo.
+- Fixed in frontmatter: `infra-reviewer` runs on Opus, `verify-live` on Haiku.
+
 ## Scratch files
 
 - IMPORTANT: everything temporary goes in `scratch/` at the repository root, never in `/tmp`, `/var/folders` or the session scratchpad directory, even where Claude Code's own instructions suggest those. That covers notes, drafts, downloaded docs, kubeconfigs, logs and throwaway scripts, for you, subagents and skills alike. `scratch/` is gitignored, and Jared opens it in the editor, so use one folder per task with a name that says what it is.
