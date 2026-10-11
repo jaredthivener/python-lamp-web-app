@@ -286,3 +286,7 @@ preview.html
 # Security scan reports (if any local tools are used)
 *.sarif
 security-report.json
+
+# Claude Code: personal settings and instructions stay out of git
+.claude/settings.local.json
+CLAUDE.local.md
