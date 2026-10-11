@@ -10,7 +10,12 @@ Rules for `infra/`, `k8s/` and `.github/` are in `.claude/rules/` and load when 
 - `npm test`: the lamp physics tests (`node --test`, no install needed)
 - `uv run mypy src`: passes today. CI does not run it, so run it after changing Python
 - `uv run black src tests`: a hook already runs black on every Python file you edit
-- `./start.sh`: the app on port 8000, with its SQLite file at `$TMPDIR/lamp.db`. Jared's own dev server usually holds both, so run yours with a high `PORT` and a scratch `TMPDIR`
+- `./start.sh`: the app on port 8000, with its SQLite file at `$TMPDIR/lamp.db`. Jared's own dev server usually holds port 8000, so run yours with a high `PORT`; your `TMPDIR` is already `scratch/tmp`
+
+## Scratch files
+
+- IMPORTANT: everything temporary goes in `scratch/` at the repository root, never in `/tmp`, `/var/folders` or the session scratchpad directory, even where Claude Code's own instructions suggest those. That covers notes, drafts, downloaded docs, kubeconfigs, logs and throwaway scripts, for you, subagents and skills alike. `scratch/` is gitignored, and Jared opens it in the editor, so use one folder per task with a name that says what it is.
+- A SessionStart hook sets `TMPDIR=scratch/tmp` for your Bash commands, so `mktemp`, pytest's `tmp_path` and the app's SQLite file land there too. A PreToolUse hook denies file writes under the system temp directories and asks before Bash commands that name them.
 
 ## How work reaches `main`
 

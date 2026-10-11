@@ -12,6 +12,8 @@ allowed-tools:
   - Bash(az aks list *)
   - Bash(az aks show *)
   - Bash(az network public-ip list *)
+  - Bash(az aks get-credentials *)
+  - Bash(mkdir -p scratch/*)
   - Bash(kubectl --kubeconfig *)
 ---
 
@@ -22,9 +24,9 @@ Run every check, then report a table: check, result, and the output that shows i
 1. **It exists.** `az group exists -n <group>`. If `false`, report that nothing is deployed and stop.
 2. **The cluster runs.** `az aks list -g <group> --query "[0].name" -o tsv`, then `az aks show -g <group> -n <cluster> --query "{power:powerState.code,state:provisioningState,kubernetes:kubernetesVersion}"`. Expect `Running` and `Succeeded`.
 3. **The site answers.** `az network public-ip list -g <group> --query "[?dnsSettings.fqdn].dnsSettings.fqdn" -o tsv` gives the host. `curl -s https://<host>/health` should return `{"status":"healthy","database":"postgresql"}`; `degraded` means the pods cannot reach PostgreSQL. After a start or a first deploy the site takes 5 to 14 minutes to answer (infra/README.md, "What a start looks like").
-4. **Flux applied everything.** Write credentials to a scratch directory from `mktemp -d`, never to `~/.kube/config`:
-   `az aks get-credentials -g <group> -n <cluster> --file <scratch>/aks.kubeconfig`, then
-   `sed -i.bak -E 's/^( *- )(devicecode|interactive)$/\1azurecli/' <scratch>/aks.kubeconfig`.
-   `kubectl --kubeconfig <scratch>/aks.kubeconfig get kustomizations,ocirepositories,helmreleases -n flux-system`: every row should be `READY True`. Name any that is not, with its message.
-5. **The app runs.** `kubectl --kubeconfig <scratch>/aks.kubeconfig -n lamp get pods -l app=lamp-app -o wide`: two pods, `Running`, on different nodes.
-6. **Telemetry is wired.** `kubectl --kubeconfig <scratch>/aks.kubeconfig -n lamp get pods -l app=lamp-app -o jsonpath='{.items[0].spec.containers[0].env[*].name}'` should list `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, which AKS's webhook adds. Only `FASTAPI_OTEL_AUTO_CONFIGURE` and `OTEL_SERVICE_NAME` (from the manifest) means it did not inject: check that the `lamp-instrumentation` Kustomization was Ready before the pods started.
+4. **Flux applied everything.** Write credentials to `scratch/aks/` in the repository (`mkdir -p scratch/aks`), never to `~/.kube/config` or a temp directory:
+   `az aks get-credentials -g <group> -n <cluster> --file scratch/aks/aks.kubeconfig`, then
+   `sed -i.bak -E 's/^( *- )(devicecode|interactive)$/\1azurecli/' scratch/aks/aks.kubeconfig`.
+   `kubectl --kubeconfig scratch/aks/aks.kubeconfig get kustomizations,ocirepositories,helmreleases -n flux-system`: every row should be `READY True`. Name any that is not, with its message.
+5. **The app runs.** `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n lamp get pods -l app=lamp-app -o wide`: two pods, `Running`, on different nodes.
+6. **Telemetry is wired.** `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n lamp get pods -l app=lamp-app -o jsonpath='{.items[0].spec.containers[0].env[*].name}'` should list `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, which AKS's webhook adds. Only `FASTAPI_OTEL_AUTO_CONFIGURE` and `OTEL_SERVICE_NAME` (from the manifest) means it did not inject: check that the `lamp-instrumentation` Kustomization was Ready before the pods started.
