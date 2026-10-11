@@ -144,7 +144,7 @@ az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 
 In that workspace the metric names and labels keep their dots (`{"http.server.request.duration"}`), they are native histograms, and each export interval is stored as its own sample, so the dashboard sums them with `sum_over_time` instead of using `rate()`. Measured on this cluster, not documented by Microsoft: the per-interval samples added up to the number of traced requests (60), while `increase()` gave 18.
 
-`/livez` probes are not recorded. Every open event stream counts as one long request that ended in `ConnectionError` when the page closed, so `/api/v1/lamp/events` shows as errors: filter that route out of an error-rate panel.
+`/livez` probes are not recorded. Every open event stream counts as one long request that ended in `ConnectionError` when the page closed, so `/api/v1/lamp/events` shows as errors: filter `error.type="ConnectionError"` out of an error panel, as the dashboard's "Errors by route" does, and leave the route in. A stream the server itself ends (a pod stopping: uvicorn cancels open streams before the app's shutdown hook runs, so the app cannot close them cleanly) ends as `asyncio.exceptions.CancelledError` instead, and that stays visible. Seen locally with SIGTERM against a running stream; not yet seen on AKS.
 
 **Logs.** In the portal, open the cluster and choose **Monitoring > Logs**, then query with KQL:
 
