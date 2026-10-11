@@ -18,8 +18,3 @@ param resourceGroupName = 'rg-lamp-web-app-dev'
 // Left empty, nobody is granted access (an Owner can still assign the role later).
 param clusterAdminObjectId = readEnvironmentVariable('AKS_ADMIN_OBJECT_ID', '')
 
-// Running hours. Each extra hour a day adds about $8 a month, and the spending limit on
-// a credit subscription switches everything off once the month's credit is gone.
-param clusterStartTime = '09:00'
-param clusterStopTime = '17:00'
-param scheduleTimeZone = 'Eastern Standard Time'

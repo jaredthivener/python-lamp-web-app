@@ -289,8 +289,8 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' = {
   ]
 }
 
-// Upgrades need the cluster running, so the windows sit inside its daytime schedule.
-// Sunday 10:00-14:00 US Eastern; move them if you move clusterStartTime/clusterStopTime.
+// Upgrades need the cluster running. The cluster is created for a test and destroyed after,
+// so these windows seldom matter; Sunday 10:00-14:00 US Eastern.
 resource maintenanceWindows 'Microsoft.ContainerService/managedClusters/maintenanceConfigurations@2026-06-01' = [
   for name in ['aksManagedAutoUpgradeSchedule', 'aksManagedNodeOSUpgradeSchedule']: {
     parent: aks
