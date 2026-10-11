@@ -14,7 +14,7 @@ Check, for what the diff touches:
 
 - **Build.** `az bicep build --file infra/main.bicep --stdout > /dev/null` and `az bicep lint --file infra/main.bicep`; for `k8s/`, the `flux schema validate` command in `.claude/rules/k8s.md`.
 - **API versions.** Each changed resource is on the newest GA version that has Bicep type data: list them with `az provider show`, and treat a BCP081 warning as "no type data".
-- **Azure Verified Modules.** Pinned to the newest version (the MCR tags list, sorted as versions), and production defaults overridden where they cost money on this subscription.
+- **Azure Verified Modules.** Pinned to the index's current version (run the check in `.claude/rules/infra.md`), breaking changes in the module's changelog accounted for, and production defaults overridden where they cost money on this subscription.
 - **Documented approach.** Compare the change with the Microsoft Learn page or Flux spec that covers it. Use the `microsoft-learn` MCP tools if you have them, otherwise WebFetch on learn.microsoft.com and fluxcd.io.
 - **Records.** A departure from Microsoft's or Flux's guidance appears in the README's tables; a cost change appears in the cost table; a new `${PLACEHOLDER}` is in both `manifestValues` and CI's values list; a resource the Bicep stopped declaring is deleted by hand.
 - **Workflows.** Actions pinned to a full SHA with a version comment; Azure jobs under an environment; long-running `az` commands avoided as the github rule describes.
