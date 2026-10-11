@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, select, update
+from sqlalchemy import create_engine, event, inspect, select, update
 
 import main
 import store as storage
@@ -103,6 +103,17 @@ def test_concurrent_pulls_never_lose_a_flip(store):
             .all()
         )
     assert actions == ["on", "off"] * 20
+
+
+def test_a_toggle_uses_one_connection_and_its_answer_includes_the_pull(store):
+    store.snapshot()  # connect and set up, so only the toggle's own checkouts are counted
+    checkouts = []
+    event.listen(store.engine, "checkout", lambda *_: checkouts.append(1))
+
+    snapshot = store.toggle("s")
+
+    assert len(checkouts) == 1
+    assert (snapshot.lifetime, snapshot.today, snapshot.is_on) == (1, 1, True)
 
 
 def test_replicas_starting_together_all_come_up_with_the_index(store):
