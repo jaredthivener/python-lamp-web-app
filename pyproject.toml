@@ -27,7 +27,7 @@ dependencies = [
     # store.py puts a span on each database call; FastAPI[standard] already installs it
     "opentelemetry-api==1.45.1",
     # Database dependencies
-    "sqlalchemy==2.1.4",
+    "sqlalchemy==2.1.5",
     "psycopg2-binary==2.9.13",
     # Signs in to Azure Postgres as the pod's identity, so there is no password to keep
     "azure-identity==1.26.0",
