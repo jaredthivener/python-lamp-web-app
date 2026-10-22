@@ -21,7 +21,7 @@ classifiers = [
 requires-python = ">=3.14"
 # The only dependency list: the Docker image and the dev container both install from here.
 dependencies = [
-    "fastapi[standard]==0.146.0",
+    "fastapi[standard]==0.148.0",
     "uvicorn[standard]==0.54.0",
     "pydantic==2.14.1",
     # store.py puts a span on each database call; FastAPI[standard] already installs it
