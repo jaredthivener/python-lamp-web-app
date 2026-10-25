@@ -15,7 +15,7 @@ One lamp, shared by everyone who has the page open. Pull the cord and it switche
 
 ## Run it
 
-You need [uv](https://docs.astral.sh/uv/). It installs Python 3.14 and the dependencies on first run.
+You need [uv](https://docs.astral.sh/uv/). It installs Python 3.15 and the dependencies on first run.
 
 ```bash
 ./start.sh        # http://localhost:8000

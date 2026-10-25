@@ -77,7 +77,7 @@ Access your security overview at:
 ✅ **No hardcoded secrets** (use environment variables)  
 ✅ **Dependency pinning** with exact versions  
 ✅ **Regular vulnerability scanning**  
-✅ **Minimal Docker images** (Alpine Linux)  
+✅ **Distroless runtime image**: no shell, package manager or setuid programs; built images are scanned in CI  
 ✅ **Non-root user** in Docker containers  
 ✅ **HTTPS enforcement** (production recommendation)  
 
@@ -119,7 +119,7 @@ repos:
     rev: 23.12.1
     hooks:
       - id: black
-        language_version: python3.14
+        language_version: python3.15
   
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
