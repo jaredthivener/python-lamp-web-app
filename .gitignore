@@ -286,3 +286,9 @@ preview.html
 # Security scan reports (if any local tools are used)
 *.sarif
 security-report.json
+
+# Claude Code: personal settings and instructions stay out of git, and scratch/ holds the
+# temporary files Claude writes (CLAUDE.md, "Scratch files")
+.claude/settings.local.json
+CLAUDE.local.md
+scratch/

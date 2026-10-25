@@ -465,7 +465,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Errors by route (excl. event stream, which ends in ConnectionError when a page closes)",
+      "title": "Errors by route (excl. ConnectionError: the client closed the page)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -489,7 +489,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (\"http.route\", \"error.type\") (histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"http.route\"!=\"/api/v1/lamp/events\",\"error.type\"!=\"\"}[$__interval]))) / ($__interval_ms / 1000)",
+          "expr": "sum by (\"http.route\", \"error.type\") (histogram_count(sum_over_time({\"http.server.request.duration\",\"service.name\"=\"lamp-app\",\"error.type\"!=\"\",\"error.type\"!=\"ConnectionError\"}[$__interval]))) / ($__interval_ms / 1000)",
           "legendFormat": "{{error.type}} {{http.route}}",
           "datasource": {
             "type": "prometheus",

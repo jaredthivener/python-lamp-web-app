@@ -21,11 +21,13 @@ classifiers = [
 requires-python = ">=3.15"
 # The only dependency list: the Docker image and the dev container both install from here.
 dependencies = [
-    "fastapi[standard]==0.143.0",
+    "fastapi[standard]==0.154.0",
     "uvicorn[standard]==0.54.0",
-    "pydantic==2.14.0",
+    "pydantic==2.14.1",
+    # store.py puts a span on each database call; FastAPI[standard] already installs it
+    "opentelemetry-api==1.45.1",
     # Database dependencies
-    "sqlalchemy==2.1.4",
+    "sqlalchemy==2.1.5",
     "psycopg2-binary==2.9.13",
     # Signs in to Azure Postgres as the pod's identity, so there is no password to keep
     "azure-identity==1.26.0",
@@ -36,6 +38,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "httpx2>=1.0.0",  # FastAPI's TestClient
+    "opentelemetry-sdk>=1.45.1",  # the span test; fastapi[standard] already installs it
     "black>=23.0.0",
     "mypy>=1.5.0",
 ]

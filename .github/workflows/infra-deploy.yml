@@ -67,7 +67,7 @@ jobs:
           azd env new ${{ env.AZURE_ENV_NAME }} --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} --location westus3 || azd env select ${{ env.AZURE_ENV_NAME }}
 
       # The cluster has to be running for its settings to be changed
-      - name: Start the cluster if the schedule has stopped it
+      - name: Start the cluster if it was stopped
         run: |
           group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
           cluster=$(az aks list --resource-group "$group" --query "[0].name" --output tsv 2>/dev/null || true)

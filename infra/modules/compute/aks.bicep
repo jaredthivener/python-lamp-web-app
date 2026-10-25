@@ -81,27 +81,27 @@ var roles = {
   clusterAdmin: 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b' // Azure Kubernetes Service RBAC Cluster Admin
 }
 
-resource clusterIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource clusterIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: clusterIdentityName
 }
 
-resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: appIdentityName
 }
 
-resource fluxIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2025-01-31-preview' existing = {
+resource fluxIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: fluxIdentityName
 }
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' existing = {
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2026-01-01' existing = {
   name: virtualNetworkName
 }
 
-resource publicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' existing = {
+resource publicIp 'Microsoft.Network/publicIPAddresses@2026-01-01' existing = {
   name: publicIpName
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: containerRegistryName
 }
 
@@ -131,10 +131,10 @@ resource publicIpRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 // =============================================================================
 // AKS Cluster
 // =============================================================================
-// The preview API version, because the OpenTelemetry (OTLP) switches under
-// azureMonitorProfile.appMonitoring are not in the 2026-05-01 one. Everything else here
-// is the same in both.
-resource aks 'Microsoft.ContainerService/managedClusters@2025-09-02-preview' = {
+// 2026-06-01: the newest GA version the Bicep type data covers (2026-07-01 is out as well). It has the
+// OpenTelemetry (OTLP) switches under azureMonitorProfile.appMonitoring, which the 2026-05-01 version
+// lacked and the preview version used until now carried under the name openTelemetryLogs.
+resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' = {
   name: clusterName
   location: location
   tags: tags
@@ -266,7 +266,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2025-09-02-preview' = {
         openTelemetryMetrics: {
           enabled: true
         }
-        openTelemetryLogs: {
+        openTelemetryLogsAndTraces: {
           enabled: true
         }
       }
@@ -289,9 +289,9 @@ resource aks 'Microsoft.ContainerService/managedClusters@2025-09-02-preview' = {
   ]
 }
 
-// Upgrades need the cluster running, so the windows sit inside its daytime schedule.
-// Sunday 10:00-14:00 US Eastern; move them if you move clusterStartTime/clusterStopTime.
-resource maintenanceWindows 'Microsoft.ContainerService/managedClusters/maintenanceConfigurations@2026-05-01' = [
+// Upgrades need the cluster running. The cluster is created for a test and destroyed after,
+// so these windows seldom matter; Sunday 10:00-14:00 US Eastern.
+resource maintenanceWindows 'Microsoft.ContainerService/managedClusters/maintenanceConfigurations@2026-06-01' = [
   for name in ['aksManagedAutoUpgradeSchedule', 'aksManagedNodeOSUpgradeSchedule']: {
     parent: aks
     name: name
@@ -346,7 +346,7 @@ resource fluxPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 
 // Workload identity: a token Kubernetes issues to one service account is accepted by
 // Entra ID as proof of being this managed identity. No secret is stored anywhere.
-resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2025-01-31-preview' = {
+resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: appIdentity
   name: clusterName
   properties: {
@@ -356,7 +356,7 @@ resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federat
   }
 }
 
-resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2025-01-31-preview' = {
+resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: fluxIdentity
   name: clusterName
   properties: {
@@ -369,7 +369,7 @@ resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federa
 // =============================================================================
 // Monitoring: tells the cluster's agents where to send metrics and logs
 // =============================================================================
-resource prometheusAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+resource prometheusAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2024-03-11' = {
   name: 'ContainerInsightsMetricsExtension'
   scope: aks
   properties: {
@@ -377,7 +377,7 @@ resource prometheusAssociation 'Microsoft.Insights/dataCollectionRuleAssociation
   }
 }
 
-resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2024-03-11' = {
   name: 'ContainerInsightsExtension'
   scope: aks
   properties: {
@@ -387,7 +387,7 @@ resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAsso
 
 // Measured on the cluster: with only the two associations above, the OTLP agent never
 // listened (connections to its port were refused). This one gives it the pipeline.
-resource applicationInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+resource applicationInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2024-03-11' = {
   name: 'ApplicationInsightsOtlp'
   scope: aks
   properties: {

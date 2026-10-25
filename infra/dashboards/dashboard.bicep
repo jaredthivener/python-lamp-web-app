@@ -21,14 +21,14 @@ var tags = {
   managedBy: 'bicep'
 }
 
-resource lampDashboard 'Microsoft.Dashboard/dashboards@2025-09-01-preview' = {
+resource lampDashboard 'Microsoft.Dashboard/dashboards@2026-09-01' = {
   name: 'lamp-api'
   location: location
   tags: union(tags, { GrafanaDashboardResourceType: 'microsoft.insights/components' })
   properties: {}
 }
 
-resource lampDashboardDefinition 'Microsoft.Dashboard/dashboards/dashboardDefinitions@2025-09-01-preview' = {
+resource lampDashboardDefinition 'Microsoft.Dashboard/dashboards/dashboardDefinitions@2026-09-01' = {
   parent: lampDashboard
   name: 'default'
   properties: {

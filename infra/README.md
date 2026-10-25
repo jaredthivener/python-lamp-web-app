@@ -20,18 +20,14 @@ graph LR
     FLUX -->|pulls| ACR[Container Registry]
     CI[GitHub Actions] -->|pushes| ACR
     AKS -.->|metrics, logs| MON[Azure Monitor]
-    SCHED[Logic Apps] -.->|start / stop| AKS
 ```
 
 | Module | What it creates |
 | --- | --- |
 | `network/network.bicep` | Virtual network, a subnet delegated to PostgreSQL, its private DNS zone, and the static public IP (with a DNS name) the site is served on |
 | `compute/aks.bicep` | The cluster, its role assignments, workload identity federation, and the Flux extension and configuration |
-| `compute/schedule.bicep` | Two Logic Apps that start the cluster in the morning and stop it in the evening |
-| `database/postgresql.bicep` | PostgreSQL flexible server: private, Entra sign-in only |
-| `container/acr.bicep` | Container registry for the app image and the manifest bundle |
 | `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs |
-| `security/managed-identity.bicep` | Used three times: the control plane, the lamp pods, and Flux each get their own identity |
+| Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (three times: the control plane, the lamp pods, and Flux each get their own identity) `avm/res/container-registry/registry` (for the app image and the manifest bundle) and `avm/res/db-for-postgre-sql/flexible-server` (private, Entra sign-in only). Their defaults lean towards production (Premium registry, zone-redundant database with geo backups and threat protection), so the cost choices are written out in the calls |
 
 **The cluster**
 
@@ -98,7 +94,7 @@ Prices are West US 3, October 2026.
 | Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
 | **Total** | **about $120** |
 
-- **The schedule is what makes this fit.** Three nodes around the clock would be $201 for nodes alone. The cluster runs 09:00-17:00 US Eastern; change `clusterStartTime`, `clusterStopTime` or `scheduleTimeZone` in `main.bicepparam` and redeploy. Each extra hour a day adds about $8 a month. The site is offline while the cluster is stopped.
+- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.28 an hour ($201 a month), and the rest of the table about $0.07 an hour. The table above is that stack up 8 hours a day for a month.
 - **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month.
 - **One charge to check on your first bill.** Azure's price list gained an AKS "free tier infrastructure" meter of $0.05/hour dated 2026-10-01 that the documentation does not describe. If it applies it adds up to $36 a month.
 - **Spot nodes are not an option here.** Visual Studio (MSDN) subscriptions cannot create spot VMs. On a pay-as-you-go subscription the same node costs $0.017/hour as spot.
@@ -137,18 +133,18 @@ kubectl -n lamp logs -l app=lamp-app -f
 kubectl -n gateway get gateway public-gateway
 kubectl -n envoy-gateway-system get pods -l gateway.envoyproxy.io/owning-gateway-name=public-gateway
 
-# Keep the cluster up late, or bring it up early
+# Pause the cluster between sessions without destroying it (the site is offline meanwhile)
 az aks start --resource-group rg-lamp-web-app-dev --name <cluster>
 az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 ```
 
 **Cluster metrics.** In the portal, open the cluster and choose **Monitoring > Dashboards with Grafana**, or query the Azure Monitor workspace with PromQL.
 
-**The app's own telemetry.** FastAPI 0.143 emits OpenTelemetry natively ([its docs](https://fastapi.tiangolo.com/advanced/opentelemetry/)). `FASTAPI_OTEL_AUTO_CONFIGURE=true` in `k8s/app/lamp-app.yaml` turns the export on; AKS's OTLP agent (preview) supplies the endpoint and forwards everything to the `lamp-appinsights-*` Application Insights resource. Open it and choose **Dashboards with Grafana > Lamp API (FastAPI OpenTelemetry)** for request rate, status codes, latency percentiles per route, errors and requests in flight. The source is `infra/dashboards/lamp-api.json`; it queries the Azure Monitor workspace behind that Application Insights resource, not a local Prometheus. A push to `main` that changes anything under `infra/dashboards/` runs the **Deploy dashboard** workflow, which deploys just that (`dashboard.bicep`) and not the cluster, so a panel change does not wait for the full Deploy. Traces are under **Investigate > Search**; exceptions are logs.
+**The app's own telemetry.** FastAPI 0.143 emits OpenTelemetry natively ([its docs](https://fastapi.tiangolo.com/advanced/opentelemetry/)). `FASTAPI_OTEL_AUTO_CONFIGURE=true` in `k8s/app/lamp-app.yaml` turns the export on; AKS's OTLP agent (preview) supplies the endpoint and forwards everything to the `lamp-appinsights-*` Application Insights resource. Open it and choose **Dashboards with Grafana > Lamp API (FastAPI OpenTelemetry)** for request rate, status codes, latency percentiles per route, errors and requests in flight. The source is `infra/dashboards/lamp-api.json`; it queries the Azure Monitor workspace behind that Application Insights resource, not a local Prometheus. A push to `main` that changes anything under `infra/dashboards/` runs the **Deploy dashboard** workflow, which deploys just that (`dashboard.bicep`) and not the cluster, so a panel change does not wait for the full Deploy. Traces are under **Investigate > Search**; exceptions are logs. `src/store.py` adds a span per database call (`store.toggle`, `store.snapshot`, `store.pulse`, `store.ping`, `store.leave`) under the request's own, so a slow query shows as one. Seen in a local ClickStack against Postgres 18; not yet checked in Application Insights.
 
 In that workspace the metric names and labels keep their dots (`{"http.server.request.duration"}`), they are native histograms, and each export interval is stored as its own sample, so the dashboard sums them with `sum_over_time` instead of using `rate()`. Measured on this cluster, not documented by Microsoft: the per-interval samples added up to the number of traced requests (60), while `increase()` gave 18.
 
-`/livez` probes are not recorded. Every open event stream counts as one long request that ended in `ConnectionError` when the page closed, so `/api/v1/lamp/events` shows as errors: filter that route out of an error-rate panel.
+`/livez` probes are not recorded. Every open event stream counts as one long request that ended in `ConnectionError` when the page closed, so `/api/v1/lamp/events` shows as errors: filter `error.type="ConnectionError"` out of an error panel, as the dashboard's "Errors by route" does, and leave the route in. A stream the server itself ends (a pod stopping: uvicorn cancels open streams before the app's shutdown hook runs, so that hook cannot close them) ends as `asyncio.exceptions.CancelledError` instead, and that stays visible. Every rollout that stops a pod with open streams therefore shows one such error per stream: that is the deploy, not a fault. Seen locally with SIGTERM against a running stream; not yet seen on AKS, including whether the sample reaches the workspace while the pod is terminating.
 
 **Logs.** In the portal, open the cluster and choose **Monitoring > Logs**, then query with KQL:
 
@@ -159,9 +155,9 @@ ContainerLogV2
 | order by TimeGenerated desc
 ```
 
-Redeploying the Bicep needs the cluster running; the workflow starts it if the schedule has it stopped.
+Redeploying the Bicep needs the cluster running; the workflow starts it if you stopped it.
 
-**What a start looks like.** Stopping the cluster discards its nodes, so each morning three new ones boot and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
+**What a start looks like.** Stopping the cluster discards its nodes, so starting it (or a fresh deploy) boots three new ones and every pod is scheduled again at once. The site answers 5 to 14 minutes after the start. Most of the spread is workload identity: pods that use it cannot be created until AKS's identity webhook is running (it fails closed, by design), and Kubernetes retries at growing intervals. Two things in `k8s/app` exist because of the start: the `serving` PriorityClass (the site's pods get onto a node ahead of the tooling) and `minDomains` on the spread constraints (the second replica waits for a second node instead of joining the first).
 
 ## ⏪ Rolling back
 
@@ -188,6 +184,8 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 - Managed Prometheus and Container Insights; the app's OpenTelemetry goes to Application Insights through AKS's own agent, and the preview features it needs are registered per Microsoft's article
 - Flux with its default multi-tenancy lockdown
 
+**API versions.** Each resource uses the newest GA version that both Azure Resource Manager accepts (`az deployment sub validate` is the authority: it rejects versions the resource provider does not have) and the Bicep type data covers, so the compiler can still check the properties. Where the newest GA version has no type data yet (the dashboard, `2026-09-01`), the newest one is used and the compiler warns. Preview versions appear only where no GA version has what is needed (Application Insights with workspace ingestion, managed identities).
+
 **Not followed, and why**
 
 | Microsoft's guidance | Here | Why |
@@ -202,8 +200,9 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | LocalDNS on node pools | Cluster DNS only | Not tried; it changes where pods send DNS queries, which the egress policy would have to allow |
 | Least privilege for the database | The app is the server's Entra administrator | A lesser role takes SQL run from inside the network, which Bicep cannot do |
 | Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
+| Control plane diagnostic settings (kube-audit and the other logs), and Defender for Containers | Neither | Not wanted for this environment: the log volume and per-vCPU price are not worth it for a practice cluster |
 | A NAT gateway for outbound traffic | The load balancer | $32/month |
-| Preview features are not for production workloads | AKS OTLP application monitoring (preview), on the preview AKS API version | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The Bicep uses `2025-09-02-preview` for the cluster because the GA API has no OTLP switch |
+| Preview features are not for production workloads | AKS OTLP application monitoring, which Microsoft still labels preview | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The cluster itself is on a GA API version (`2026-06-01`), which has the OTLP switches |
 | Microsoft documents creating the OTLP Application Insights resource in the portal only | `Microsoft.Insights/components@2025-01-23-preview` with `AzureMonitorWorkspaceIngestionMode: Enabled` | The properties come from the REST API specification, not from a Learn article |
 
 ## 🔁 Checked against Flux's and Microsoft's GitOps guidance
