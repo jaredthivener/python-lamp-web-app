@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------
 # The version and digest are written out in both FROM lines rather than passed through an ARG,
 # which Dependabot cannot read: with an ARG here it never proposes a newer Python.
-FROM python:3.15.0rc3-slim-trixie@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549 AS builder
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS builder
 
 # Environment setup for clean, fast, reproducible builds
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -34,7 +34,7 @@ RUN mkdir -p /deps \
 # ------------------------------------------------------------------------
 # 🏗️ Production Stage
 # ------------------------------------------------------------------------
-FROM python:3.15.0rc3-slim-trixie@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
