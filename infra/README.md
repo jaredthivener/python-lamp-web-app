@@ -80,22 +80,22 @@ A change made with `kubectl` does not last. Flux puts back what the bundle says:
 
 ## 💰 What it costs
 
-Prices are West US 3, October 2026.
+Prices are Central US, October 2026 (retail prices API).
 
 | Item | Monthly |
 | --- | --- |
-| Three nodes, 8 hours a day ($0.0918/hour each) | $67 |
+| Three nodes, 8 hours a day ($0.104/hour each) | $76 |
 | Load balancer | $18 |
-| PostgreSQL B1ms + 32 GB | $16 |
+| PostgreSQL B1ms + 32 GB | $18 |
 | Two public IPs (site, outbound) | $7 |
 | Container registry (Basic) | $5 |
 | Prometheus ingestion (estimate) | $5 |
 | App telemetry in Application Insights (estimate; a few MB a day) | $0-2 |
 | Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
-| **Total** | **about $120** |
+| **Total** | **about $130** |
 
-- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.28 an hour ($201 a month), and the rest of the table about $0.07 an hour. The table above is that stack up 8 hours a day for a month.
-- **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month.
+- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.31 an hour ($228 a month), and the rest of the table about $0.07 an hour. The table above is that stack up 8 hours a day for a month.
+- **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month. The table leaves about $20 of it.
 - **One charge to check on your first bill.** Azure's price list gained an AKS "free tier infrastructure" meter of $0.05/hour dated 2026-10-01 that the documentation does not describe. If it applies it adds up to $36 a month.
 - **Spot nodes are not an option here.** Visual Studio (MSDN) subscriptions cannot create spot VMs. On a pay-as-you-go subscription the same node costs $0.017/hour as spot.
 
@@ -112,7 +112,7 @@ To deploy from your own machine instead: `azd env set AKS_ADMIN_OBJECT_ID <id>`,
 
 The PostgreSQL step sometimes fails claiming the virtual network or its subnet "doesn't exist", moments after Azure has created them. Running the deployment again gets past it, and the workflow retries by itself.
 
-**Region.** `westus3` is the default because credit subscriptions are refused PostgreSQL flexible servers in several regions, East US 2 among them. `az postgres flexible-server list-skus -l <region>` shows whether a region is open to you.
+**Region.** `centralus` is the default because this credit subscription is refused PostgreSQL flexible servers in several regions: all of them in East US 2, East US, West US 2 and South Central US (checked 2026-10-06), and Burstable ones in West US 3, which worked on 2026-10-11 and was refused on 2026-10-25 (`SkuNotAvailable`; a General Purpose server was accepted there). Measured on 2026-10-25 by creating `Standard_B1ms` servers (PostgreSQL 18, no VNet): refused in West US 3 whatever the zone, version 17 or 18, and for `Standard_B2s`; accepted in Central US and North Central US. `az postgres flexible-server list-skus -l <region>` listed West US 3's Burstable sizes as available throughout, so it does not show this: only creating a server does. Central US costs about 13% more for nodes than West US 3 did, and its `Standard_D2pds_v6` nodes have zones 1, 2 and 3; North Central US lists no zones for them. An environment already deployed in another region should be removed with **Destroy Azure Infrastructure** before the first deploy here; whether Azure would accept the existing group in a new region was not tested.
 
 ## 🧰 Day to day
 

@@ -4,12 +4,12 @@ using './main.bicep'
 // Azure Infrastructure Parameters for Lamp Web App
 // =============================================================================
 // Sized for a $150/month credit: three small Arm64 (Cobalt) nodes that run 8 hours a
-// day come to roughly $120 with everything else. See infra/README.md for the sums.
+// day come to roughly $130 with everything else. See infra/README.md for the sums.
 // =============================================================================
 
 // Environment Configuration
 param environmentName = 'dev'
-param location = 'westus3' // East US 2 costs the same but refuses PostgreSQL flexible servers on a credit subscription
+param location = 'centralus' // a credit subscription is refused Burstable PostgreSQL flexible servers in West US 3 (and all of them in East US 2); see infra/README.md
 param resourceGroupName = 'rg-lamp-web-app-dev'
 
 // Who may run kubectl against the cluster: your Entra object ID
