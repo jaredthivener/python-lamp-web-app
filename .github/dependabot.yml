@@ -74,7 +74,7 @@ updates:
           - "*"
     rebase-strategy: "auto"
 
-  # Docker base image: the two FROM lines in the Dockerfile
+  # Docker base images: the FROM lines in the Dockerfile (Python twice, and the distroless runtime)
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

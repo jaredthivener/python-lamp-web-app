@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------
 # 🐍 Multi-stage build for FastAPI + PostgreSQL with UV package manager
 # ------------------------------------------------------------------------
-# The version and digest are written out in both FROM lines rather than passed through an ARG,
+# The version and digest are written out in each FROM line rather than passed through an ARG,
 # which Dependabot cannot read: with an ARG here it never proposes a newer Python.
 FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS builder
 
@@ -32,9 +32,47 @@ RUN mkdir -p /deps \
     && uv pip install --no-cache-dir --target /deps -r /tmp/pyproject.toml
 
 # ------------------------------------------------------------------------
+# 📦 Runtime files stage: the interpreter, the dependencies and the libraries they load
+# ------------------------------------------------------------------------
+# Still the official Python image, so the interpreter is the one Python ships. Nothing here is
+# shipped except what the production stage copies out of /usr/local and /rootfs.
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS runtime
+
+# The system libraries the interpreter's extension modules load that the production base does not
+# have (it has libc, libssl, zlib, zstd, libgcc and libstdc++), and tini. No libpq: psycopg2-binary
+# loads the copy inside its own wheel. A wheel or Python version that needs another library fails the
+# CI step "Check the image's libraries load": add its package here.
+ARG RUNTIME_PACKAGES="libbz2-1.0 libffi8 liblzma5 libmpdec4 libsqlite3-0 tini"
+
+# "install" brings packages that are already installed up to the newest version, so these are
+# current when the image is built. Nothing is installed at run time, and pip carries its own
+# copies of libraries that fall behind.
+RUN apt-get update && apt-get install -y --no-install-recommends $RUNTIME_PACKAGES \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip uninstall --yes --root-user-action=ignore pip
+
+COPY --from=builder /deps /usr/local/lib/python3.15/site-packages
+
+# Extension modules the app does not use, whose libraries carry findings that have no fix: curses
+# and readline (ncurses), gdbm and dbm, and uuid (libuuid, from util-linux). uuid1() still works
+# without its C module, which azure-core calls for request IDs: it takes a random node ID instead
+# of the MAC address. tkinter goes too: it needs a Tk that this image never had.
+RUN cd /usr/local/lib/python3.15/lib-dynload && rm _curses*.so readline*.so _gdbm*.so _dbm*.so _uuid*.so _tkinter*.so
+
+# The libraries as files, plus a dpkg status entry for each package, which is how the production base
+# lists its own packages: without it a scanner would not know these libraries are there.
+RUN mkdir -p /rootfs/var/lib/dpkg/status.d \
+    && dpkg -L $RUNTIME_PACKAGES | grep -E '\.so|/bin/tini$' | tar -cf - -T - | tar -xf - -C /rootfs \
+    && for package in $RUNTIME_PACKAGES; do dpkg-query --status "$package" > "/rootfs/var/lib/dpkg/status.d/$package"; done
+
+# ------------------------------------------------------------------------
 # 🏗️ Production Stage
 # ------------------------------------------------------------------------
-FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
+# Distroless: no shell, no package manager, no setuid programs, none of Debian's util-linux, ncurses,
+# systemd, perl or login. "cc" is the variant with libgcc and libstdc++, which the Rust wheels
+# (cryptography, pydantic-core) load. Like the Python image above, its version and digest are
+# written out so Dependabot proposes newer ones.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
@@ -51,37 +89,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
     PORT=8000
 
-# Install runtime deps (no compilers, no apt cache left behind). No libpq here: psycopg2-binary
-# loads the copy inside its own wheel, so the system one would only be something to patch.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tini ca-certificates \
-    # Cleanup: aggressively remove APT metadata and logs
-    && rm -rf /var/lib/apt/lists/* /var/cache/* /usr/share/doc/* /usr/share/man/* /var/log/* /tmp/* \
-    # Nothing is installed at run time, and pip carries its own copies of libraries that fall behind
-    && pip uninstall --yes --root-user-action=ignore pip
-
-# Create non-root user. The fixed ID is what lets Kubernetes verify runAsNonRoot: it
-# cannot tell from a name alone that the user is not root.
-RUN groupadd -r -g 10001 appuser && useradd -r -u 10001 -g appuser -s /bin/sh -m appuser
+COPY --from=runtime /usr/local /usr/local
+COPY --from=runtime /rootfs/ /
 
 # Working directory
 WORKDIR /app/src
 
-# Copy dependencies from builder
-COPY --from=builder /deps /usr/local/lib/python3.15/site-packages
-
 # Copy source code
 COPY --chown=10001:10001 src/ .
 
-# Switch to non-root user
+# Run as a non-root user. The fixed ID is what lets Kubernetes verify runAsNonRoot: it cannot tell
+# from a name alone that the user is not root. The ID needs no /etc/passwd entry.
 USER 10001:10001
 
 # Expose FastAPI port
 EXPOSE 8000
 
-# Healthcheck endpoint
+# Healthcheck endpoint. Exec form because there is no shell; an exception exits non-zero.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/livez', timeout=3).read()" || exit 1
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/livez', timeout=3).read()"]
 
 # Entrypoint and command
 ENTRYPOINT ["/usr/bin/tini", "--"]

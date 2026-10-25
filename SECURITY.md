@@ -77,7 +77,7 @@ Access your security overview at:
 ✅ **No hardcoded secrets** (use environment variables)  
 ✅ **Dependency pinning** with exact versions  
 ✅ **Regular vulnerability scanning**  
-✅ **Minimal Docker images** (Alpine Linux)  
+✅ **Distroless runtime image**: no shell, package manager or setuid programs; built images are scanned in CI  
 ✅ **Non-root user** in Docker containers  
 ✅ **HTTPS enforcement** (production recommendation)  
 

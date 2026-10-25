@@ -129,6 +129,12 @@ kubectl get kustomizations,ocirepositories,helmreleases -n flux-system
 kubectl -n lamp get pods -o wide
 kubectl -n lamp logs -l app=lamp-app -f
 
+# A shell in a pod. The image is distroless and has none, so `kubectl exec` has nothing to run;
+# attach a debug container instead (an ephemeral container, stable since Kubernetes 1.25:
+# https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/). The namespace
+# enforces the restricted pod profile, hence --profile. Not tried on this cluster.
+kubectl -n lamp debug -it <pod> --image=busybox:stable --target=lamp-app --profile=restricted
+
 # The gateway: its status and address, then the proxies behind it
 kubectl -n gateway get gateway public-gateway
 kubectl -n envoy-gateway-system get pods -l gateway.envoyproxy.io/owning-gateway-name=public-gateway
@@ -194,7 +200,7 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | A dedicated system node pool of two or more nodes, plus a user pool | One pool of three nodes, shared | Separate pools need at least four nodes (two for the system pool, two so the app's replicas sit on different ones); the budget covers three |
 | Cluster autoscaler | A fixed node count | It makes the bill predictable under a spending limit. On two nodes it also kept adding and removing a third |
 | The application routing add-on's Gateway API implementation | Envoy Gateway, installed by Flux | Measured on a real cluster, the managed one reserves 1 vCPU and 4 GB for its control plane (this one: 25m). The CLI still labels it preview, and its proxies are rejected by the `restricted` pod security profile. `k8s/app` is plain Gateway API, so switching is a change of `gatewayClassName` |
-| Defender for Containers, and image vulnerability scanning | Neither | Defender is billed per vCPU. CodeQL and dependency review run in CI, but nothing scans the built image |
+| Defender for Containers, and image vulnerability scanning in the registry | Neither. CI scans the image instead | Defender is billed per vCPU. CI runs Trivy on the built image and fails on a finding that has a fix, and Copacetic patches what it can (`.github/actions/harden-image`). Nothing rescans an image once it is in the registry |
 | Azure Policy add-on | Pod Security Admission labels on the namespaces | It adds controllers of its own to nodes that are already nearly full after a start; the built-in admission control enforces the pod rules that matter here |
 | A web application firewall in front of ingress | None | Application Gateway for Containers and Front Door start at tens of dollars a month |
 | LocalDNS on node pools | Cluster DNS only | Not tried; it changes where pods send DNS queries, which the egress policy would have to allow |

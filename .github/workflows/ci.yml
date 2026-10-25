@@ -83,6 +83,11 @@ jobs:
         with:
           image: lamp:ci
 
+      # The image has no shell and only the libraries the Dockerfile copies in, so this loads every
+      # shared object it ships. The Publish job runs it too, on Arm64, which is what the cluster runs.
+      - name: Check the image's libraries load
+        run: docker run --rm -i lamp:ci python - < .github/scripts/check-image-libs.py
+
       # Its own Postgres: patching restarts Docker on the runner (see the action), which stops the
       # job's service container.
       - name: Check the image serves
@@ -150,6 +155,12 @@ jobs:
         uses: ./.github/actions/harden-image
         with:
           image: ${{ steps.registry.outputs.server }}/lamp-app:${{ github.sha }}
+
+      - name: Check the image's libraries load
+        if: steps.registry.outputs.server != ''
+        env:
+          IMAGE: ${{ steps.registry.outputs.server }}/lamp-app:${{ github.sha }}
+        run: docker run --rm -i "$IMAGE" python - < .github/scripts/check-image-libs.py
 
       - name: Push the image
         if: steps.registry.outputs.server != ''
