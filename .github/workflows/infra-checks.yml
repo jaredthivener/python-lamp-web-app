@@ -62,14 +62,14 @@ jobs:
       # Asks Azure Resource Manager whether it would accept the deployment: the checks the
       # linter cannot make (quota, policy, names that are taken)
       - name: Validate against Azure
-        run: az deployment sub validate --location westus3 --parameters infra/main.bicepparam --only-show-errors --output none
+        run: az deployment sub validate --location centralus --parameters infra/main.bicepparam --only-show-errors --output none
 
       # What-if reports an unchanged deployment as modifying nearly everything: Azure's own
       # default values show up as deleted properties (Microsoft calls it noise). So the
       # comment leads with what is created or deleted, and keeps the rest folded away.
       - name: Preview the changes
         run: |
-          az deployment sub what-if --location westus3 --parameters infra/main.bicepparam \
+          az deployment sub what-if --location centralus --parameters infra/main.bicepparam \
             --no-pretty-print --only-show-errors > whatif.json
           python3 - <<'EOF' > comment.md
           import json

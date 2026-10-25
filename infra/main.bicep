@@ -26,8 +26,8 @@ param resourceGroupName string = 'rg-lamp-web-app'
 @allowed(['dev', 'staging', 'prod'])
 param environmentName string
 
-@description('The Azure region where resources will be deployed. Credit-based subscriptions cannot create PostgreSQL flexible servers in every region: `az postgres flexible-server list-skus -l <region>` shows whether one is open to yours.')
-param location string = 'westus3'
+@description('The Azure region where resources will be deployed. Credit-based subscriptions cannot create PostgreSQL flexible servers in every region, and `az postgres flexible-server list-skus -l <region>` does not show which: creating one does (see infra/README.md).')
+param location string = 'centralus'
 
 @description('Kubernetes minor version. AKS applies new patch releases of it automatically.')
 param kubernetesVersion string = '1.36'
