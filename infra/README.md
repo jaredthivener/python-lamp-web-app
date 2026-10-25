@@ -132,8 +132,12 @@ kubectl -n lamp logs -l app=lamp-app -f
 # A shell in a pod. The image is distroless and has none, so `kubectl exec` has nothing to run;
 # attach a debug container instead (an ephemeral container, stable since Kubernetes 1.25:
 # https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/). The namespace
-# enforces the restricted pod profile, hence --profile. Not tried on this cluster.
-kubectl -n lamp debug -it <pod> --image=busybox:stable --target=lamp-app --profile=restricted
+# enforces the restricted profile and the pod must run as non-root, but busybox runs as root, so
+# --custom gives the debug container the app's user. Tried on this cluster on 2026-10-25: it sees the
+# app's processes and can reach it on localhost, but not its files (/proc/1/root is denied), and
+# without --custom the container never starts. Ephemeral containers cannot be removed from a pod.
+echo '{"securityContext":{"runAsUser":10001,"runAsGroup":10001,"runAsNonRoot":true}}' > /tmp/debug.json
+kubectl -n lamp debug -it <pod> --image=busybox:stable --target=lamp-app --profile=restricted --custom=/tmp/debug.json
 
 # The gateway: its status and address, then the proxies behind it
 kubectl -n gateway get gateway public-gateway
