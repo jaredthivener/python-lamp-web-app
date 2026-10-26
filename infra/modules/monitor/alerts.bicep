@@ -37,6 +37,11 @@ param location string
 @description('Tags to apply to the resources')
 param tags object = {}
 
+@description('Alerts at this severity number or lower notify the action group (0 critical, 1 error, 2 warning, 3 informational, 4 verbose). The rest show in the portal under Alerts only. Set to 1: this is the owner of a practice environment, and an email per warning (and per resolution) was too many.')
+@minValue(0)
+@maxValue(4)
+param maxNotifiedSeverity int = 1
+
 @description('Where alerts are emailed. Empty creates the rules without notifications: they still fire, and show in the portal under Alerts.')
 @secure()
 param alertEmail string = ''
@@ -230,12 +235,41 @@ resource ruleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' 
         autoResolved: true
         timeToResolve: 'PT10M'
       }
-      actions: empty(alertEmail) ? [] : [
+      actions: empty(alertEmail) || rule.severity > maxNotifiedSeverity ? [] : [
         {
           actionGroupId: actionGroup.id
         }
       ]
     }]
+  }
+}
+
+// A stateful alert sends a second notification when it resolves, by email as well
+// (https://learn.microsoft.com/azure/azure-monitor/alerts/alerts-overview#stateful-alerts). An alert
+// processing rule that removes the action groups from alerts whose monitor condition is Resolved keeps
+// the fired notification and drops that one; the resolution still shows in the portal. Scoped to this
+// resource group. Azure says a new or changed rule can take up to 30 minutes to take effect.
+// https://learn.microsoft.com/azure/azure-monitor/alerts/alerts-processing-rules
+resource suppressResolved 'Microsoft.AlertsManagement/actionRules@2021-08-08' = {
+  name: '${name}-no-resolved-notifications'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'No notification when an alert resolves: the fired one already told the owner (infra/modules/monitor/alerts.bicep)'
+    scopes: [resourceGroup().id]
+    conditions: [
+      {
+        field: 'MonitorCondition'
+        operator: 'Equals'
+        values: ['Resolved']
+      }
+    ]
+    actions: [
+      {
+        actionType: 'RemoveAllActionGroups'
+      }
+    ]
+    enabled: true
   }
 }
 
