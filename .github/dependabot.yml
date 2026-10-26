@@ -74,9 +74,12 @@ updates:
           - "*"
     rebase-strategy: "auto"
 
-  # Docker base images: the FROM lines in the Dockerfile (Python twice, and the distroless runtime)
+  # Docker base images: the FROM lines in the Dockerfile (Python twice, and the distroless runtime),
+  # and the OpenTelemetry collector's image in the Kubernetes manifest
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/"
+      - "/k8s/observability"
     schedule:
       interval: "weekly"
       time: "12:00"
@@ -91,6 +94,13 @@ updates:
       # .python-version, pyproject.toml and the site-packages path in the Dockerfile as well,
       # so it is done by hand.
       - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      # The collector is 0.x: its configuration syntax has changed between minor versions (azure_auth
+      # in 0.148), so only patch releases merge themselves. CI validates the config against the
+      # new image (.github/scripts/validate-collector.sh), which catches the rest.
+      - dependency-name: "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"

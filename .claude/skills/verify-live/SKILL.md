@@ -1,6 +1,6 @@
 ---
 name: verify-live
-description: Check the deployed Azure environment end to end - cluster running, site answering with PostgreSQL behind it, Flux Kustomizations Ready, lamp pods up, OpenTelemetry endpoints injected. Use after a deploy, or when asked whether the live site works.
+description: Check the deployed Azure environment end to end - cluster running, site answering with PostgreSQL behind it, Flux Kustomizations Ready, lamp pods up, OpenTelemetry collector running and spans arriving. Use after a deploy, or when asked whether the live site works.
 argument-hint: "[environment, default dev]"
 context: fork
 agent: general-purpose
@@ -29,4 +29,4 @@ Run every check, then report a table: check, result, and the output that shows i
    `sed -i.bak -E 's/^( *- )(devicecode|interactive)$/\1azurecli/' scratch/aks/aks.kubeconfig`.
    `kubectl --kubeconfig scratch/aks/aks.kubeconfig get kustomizations,ocirepositories,helmreleases -n flux-system`: every row should be `READY True`. Name any that is not, with its message.
 5. **The app runs.** `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n lamp get pods -l app=lamp-app -o wide`: two pods, `Running`, on different nodes.
-6. **Telemetry is wired.** `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n lamp get pods -l app=lamp-app -o jsonpath='{.items[0].spec.containers[0].env[*].name}'` should list `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, which AKS's webhook adds. Only `FASTAPI_OTEL_AUTO_CONFIGURE` and `OTEL_SERVICE_NAME` (from the manifest) means it did not inject: check that the `lamp-instrumentation` Kustomization was Ready before the pods started.
+6. **Telemetry is wired.** `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n observability get pods` shows two `otel-gateway` pods `Running`, and `kubectl --kubeconfig scratch/aks/aks.kubeconfig -n observability logs deploy/otel-gateway --tail=30` has no `Exporting failed` lines (`Unauthenticated` means the collector's workload identity or its role on the data collection rule is wrong). The app's pods should list `OTEL_EXPORTER_OTLP_ENDPOINT` among their env names. Then the data itself: `az monitor log-analytics query --workspace <customerId of the lamp-logs-* workspace> --analytics-query "OTelSpans | where TimeGenerated > ago(10m) | summarize count() by ServiceName"` should list `lamp-app` after a few requests to the site. Name what is missing.

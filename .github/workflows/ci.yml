@@ -63,6 +63,10 @@ jobs:
           EOF
           flux schema validate k8s --schema-location default --schema-location ecosystem \
             --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict
+          # The collector's configuration is not a Kubernetes object, so the schema check above cannot see
+          # it: the pinned collector image validates it instead (and a Dependabot bump of that image
+          # merges itself, so this is what stops one that no longer accepts the config)
+          .github/scripts/validate-collector.sh "$RUNNER_TEMP/values.env"
 
       # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite
