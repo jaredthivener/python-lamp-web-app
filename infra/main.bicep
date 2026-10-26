@@ -9,6 +9,7 @@ targetScope = 'subscription'
 // - Network module: virtual network, private DNS for Postgres, the site's public IP
 // - Monitoring module: managed Prometheus for metrics, Container Insights for logs,
 //   and the app's own OpenTelemetry (a collector in the cluster writes to Azure Monitor)
+// - Grafana module: Azure Managed Grafana over those workspaces, for the dashboards
 // - ACR module: registry for the app image and the Flux manifest bundle
 // - PostgreSQL module: private flexible server with Entra-only sign-in
 // - AKS module: the cluster, its identities, and the Flux (GitOps) configuration
@@ -91,6 +92,20 @@ module monitoring 'modules/monitor/monitoring.bicep' = {
     tags: commonTags
     metricsReaderObjectId: clusterAdminObjectId
     otlpPublisherObjectId: collectorIdentity.outputs.principalId
+  }
+}
+
+module grafana 'modules/monitor/grafana.bicep' = {
+  name: 'grafana-deployment'
+  scope: resourceGroup
+  params: {
+    name: '${resourcePrefix}-amg-${resourceToken}' // Azure Managed Grafana: names stop at 23 characters
+    location: location
+    tags: commonTags
+    monitorWorkspaceId: monitoring.outputs.monitorWorkspaceId
+    monitorWorkspaceName: monitoring.outputs.monitorWorkspaceName
+    logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
+    adminObjectId: clusterAdminObjectId
   }
 }
 
@@ -269,5 +284,11 @@ output containerRegistryLoginServer string = acr.outputs.loginServer
 @description('The fully qualified domain name of the PostgreSQL Server')
 output postgresServerFqdn string = postgresDatabase.outputs.fqdn!
 
-@description('The Azure Monitor workspace that stores the cluster\'s Prometheus metrics')
+@description('The Azure Monitor workspace that stores the cluster\'s and the app\'s metrics')
 output monitorWorkspaceName string = monitoring.outputs.monitorWorkspaceName
+
+@description('Where the dashboards are: Azure Managed Grafana')
+output grafanaUrl string = grafana.outputs.endpoint
+
+@description('The name of the Grafana instance')
+output grafanaName string = grafana.outputs.name
