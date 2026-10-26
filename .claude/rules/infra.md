@@ -21,7 +21,8 @@ paths:
   ```
 
   Before moving a pin, read the module's `CHANGELOG.md` (in `https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/<module>`) for breaking changes. The pull request's what-if shows what the new version would change in Azure.
-- Not on AVM, checked 2026-10-11 against the index's current versions: the AKS cluster (`avm/res/container-service/managed-cluster` 0.14.0 uses API 2025-10-01 and has no `appMonitoring`) and Application Insights (`avm/res/insights/component` 0.8.0 uses API 2020-02-02 and has no `AzureMonitorWorkspaceIngestionMode`, which the OTLP setup needs). Look again when either's current version changes.
+- Not on AVM: the AKS cluster (checked 2026-10-11: `avm/res/container-service/managed-cluster` 0.14.0 uses API 2025-10-01) and Managed Grafana (checked 2026-10-25: `avm/res/dashboard/grafana` is "Proposed" and has no version). Look again when either's status changes.
+- `az deployment sub validate` does not run the resource providers' preflight checks for everything: it accepted a 26-character Grafana name that Azure limits to 23, and only `what-if` rejected it. Read both.
 - A deployment never deletes a resource the Bicep stopped declaring. Delete it, and its role assignments, by hand as part of the same change.
 - The subscription is an MSDN credit with a hard $150 monthly spending limit: no spot VMs, and PostgreSQL flexible servers are refused in East US 2 and several other regions, and Burstable ones in West US 3, hence centralus. `list-skus` does not show the refusal: creating a server does. Update the cost table in infra/README.md with any change that affects cost.
 - Not wanted in this environment: authorized IP ranges, Defender for Containers, control-plane diagnostic settings, start/stop schedules.

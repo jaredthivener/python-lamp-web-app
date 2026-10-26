@@ -19,15 +19,17 @@ graph LR
     APP -->|Entra token| PG
     FLUX -->|pulls| ACR[Container Registry]
     CI[GitHub Actions] -->|pushes| ACR
-    AKS -.->|metrics, logs| MON[Azure Monitor]
+    AKS -.->|metrics, logs, the app's OpenTelemetry| MON[Azure Monitor]
+    MON --> GRAF[Managed Grafana]
 ```
 
 | Module | What it creates |
 | --- | --- |
 | `network/network.bicep` | Virtual network, a subnet delegated to PostgreSQL, its private DNS zone, and the static public IP (with a DNS name) the site is served on |
 | `compute/aks.bicep` | The cluster, its role assignments, workload identity federation, and the Flux extension and configuration |
-| `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs |
-| Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (three times: the control plane, the lamp pods, and Flux each get their own identity) `avm/res/container-registry/registry` (for the app image and the manifest bundle) and `avm/res/db-for-postgre-sql/flexible-server` (private, Entra sign-in only). Their defaults lean towards production (Premium registry, zone-redundant database with geo backups and threat protection), so the cost choices are written out in the calls |
+| `monitor/monitoring.bicep` | Managed Prometheus for metrics, Container Insights for logs, and the data collection rule the OpenTelemetry collector writes the app's telemetry to |
+| `monitor/grafana.bicep` | Azure Managed Grafana (Standard) over the Azure Monitor and Log Analytics workspaces |
+| Azure Verified Modules, called from `main.bicep` | `avm/res/managed-identity/user-assigned-identity` (four times: the control plane, the lamp pods, the OpenTelemetry collector, and Flux each get their own identity) `avm/res/container-registry/registry` (for the app image and the manifest bundle) and `avm/res/db-for-postgre-sql/flexible-server` (private, Entra sign-in only). Their defaults lean towards production (Premium registry, zone-redundant database with geo backups and threat protection), so the cost choices are written out in the calls |
 
 **The cluster**
 
@@ -55,7 +57,7 @@ graph LR
 1. A pull request is opened. The **Tests** job runs, and with it Flux's validator over `k8s/`: every manifest is checked against its schema, with the `${PLACEHOLDERS}` filled in.
 2. It merges to `main`. The **Publish** job builds the Arm64 image and pushes it to the registry, tagged with the commit.
 3. The same job pushes the `k8s/` folder as an OCI artifact, with that image tag written in. If the commit is still the newest on `main`, the `latest` tag moves to it.
-4. Flux, inside the cluster, sees the new artifact within a minute and applies it. Four Flux Kustomizations apply it in order: `k8s/infrastructure` (the gateway controller and cert-manager) and `k8s/namespaces` first, then `k8s/instrumentation` (after the namespaces), then `k8s/app` (the public gateway and the application; after `infrastructure` and `instrumentation`). The Instrumentation comes before the app because AKS's webhook reads it when it sees the Deployment, and does nothing if it is not there yet.
+4. Flux, inside the cluster, sees the new artifact within a minute and applies it. Four Flux Kustomizations apply it in order: `k8s/infrastructure` (the gateway controller and cert-manager) and `k8s/namespaces` first, then `k8s/observability` (the OpenTelemetry collector; after the namespaces), then `k8s/app` (the public gateway and the application; after `infrastructure` and `observability`). The collector comes before the app so the app's first spans and metrics have somewhere to go.
 
 Nothing outside the cluster ever holds credentials for it. Values that differ per deployment (host name, identity, database address) are handed to Flux by Bicep as `manifestValues` and replace the `${PLACEHOLDERS}` in `k8s/app`. A placeholder that gets no value stops the rollout.
 
@@ -90,12 +92,12 @@ Prices are Central US, October 2026 (retail prices API).
 | Two public IPs (site, outbound) | $7 |
 | Container registry (Basic) | $5 |
 | Prometheus ingestion (estimate) | $5 |
-| App telemetry in Application Insights (estimate; a few MB a day) | $0-2 |
+| Azure Managed Grafana (Standard, $0.042/hour while it exists, plus $6 for each user) | $16 |
 | Logs (capped at 0.2 GB a day; the first 5 GB a month are free) | $0-2 |
-| **Total** | **about $130** |
+| **Total** | **about $145** |
 
-- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.31 an hour ($228 a month), and the rest of the table about $0.07 an hour. The table above is that stack up 8 hours a day for a month.
-- **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month. The table leaves about $20 of it.
+- **Nothing stops the cluster for you.** Deploy it to test and run **Destroy Azure Infrastructure** when you are done: once the resource group is gone nothing is billed. Left up, the three nodes alone cost about $0.31 an hour ($228 a month), and the rest of the table about $0.12 an hour. The table above is that stack up 8 hours a day for a month.
+- **Mind the spending limit.** On a credit subscription, reaching $150 switches everything off until the next month. The table leaves about $5 of it, so a month of testing sessions fits and an environment left up does not.
 - **One charge to check on your first bill.** Azure's price list gained an AKS "free tier infrastructure" meter of $0.05/hour dated 2026-10-01 that the documentation does not describe. If it applies it adds up to $36 a month.
 - **Spot nodes are not an option here.** Visual Studio (MSDN) subscriptions cannot create spot VMs. On a pay-as-you-go subscription the same node costs $0.017/hour as spot.
 
@@ -148,9 +150,13 @@ az aks start --resource-group rg-lamp-web-app-dev --name <cluster>
 az aks stop  --resource-group rg-lamp-web-app-dev --name <cluster>
 ```
 
-**Cluster metrics.** In the portal, open the cluster and choose **Monitoring > Dashboards with Grafana**, or query the Azure Monitor workspace with PromQL.
+**One place to look: Azure Managed Grafana.** The address is the deployment's `grafanaUrl` output, next to `lampUrl` (or the Grafana resource's overview in the portal). Sign in with your Entra account: the deploy gives `AKS_ADMIN_OBJECT_ID` the Grafana Admin role. Its data sources are the Azure Monitor workspace (PromQL: cluster and app metrics) and Log Analytics (KQL: container logs, and the app's spans in `OTelSpans`). Grafana ships dashboards for AKS and for OpenTelemetry data under **Dashboards > Azure**; this repository adds **Lamp API (FastAPI OpenTelemetry)** for request rate, status codes, latency percentiles per route, errors and requests in flight.
 
-**The app's own telemetry.** FastAPI 0.143 emits OpenTelemetry natively ([its docs](https://fastapi.tiangolo.com/advanced/opentelemetry/)). `FASTAPI_OTEL_AUTO_CONFIGURE=true` in `k8s/app/lamp-app.yaml` turns the export on; AKS's OTLP agent (preview) supplies the endpoint and forwards everything to the `lamp-appinsights-*` Application Insights resource. Open it and choose **Dashboards with Grafana > Lamp API (FastAPI OpenTelemetry)** for request rate, status codes, latency percentiles per route, errors and requests in flight. The source is `infra/dashboards/lamp-api.json`; it queries the Azure Monitor workspace behind that Application Insights resource, not a local Prometheus. A push to `main` that changes anything under `infra/dashboards/` runs the **Deploy dashboard** workflow, which deploys just that (`dashboard.bicep`) and not the cluster, so a panel change does not wait for the full Deploy. Traces are under **Investigate > Search**; exceptions are logs. `src/store.py` adds a span per database call (`store.toggle`, `store.snapshot`, `store.pulse`, `store.ping`, `store.leave`) under the request's own, so a slow query shows as one. Seen in a local ClickStack against Postgres 18; not yet checked in Application Insights.
+**The app's own telemetry.** FastAPI 0.143 emits OpenTelemetry natively ([its docs](https://fastapi.tiangolo.com/advanced/opentelemetry/)). `FASTAPI_OTEL_AUTO_CONFIGURE=true` and the `OTEL_*` settings in `k8s/app/lamp-app.yaml` send it to the collector in `k8s/observability` (`otel-gateway`, two replicas), which batches it and posts it to a data collection rule with its own workload identity (`Monitoring Metrics Publisher` on that rule and nothing else). Metrics go to the Azure Monitor workspace, spans and logs to Log Analytics. The source of the dashboard is `infra/dashboards/lamp-api.json`. A push to `main` that changes anything under `infra/dashboards/` runs the **Deploy dashboard** workflow, which imports the JSON into Grafana through its API (Grafana dashboards are not Azure resources) and not the cluster, so a panel change does not wait for the full Deploy; the Deploy workflow starts it too once the infrastructure exists. `src/store.py` adds a span per database call (`store.toggle`, `store.snapshot`, `store.pulse`, `store.ping`, `store.leave`) under the request's own, so a slow query shows as one: in Log Analytics, `OTelSpans | where ServiceName == "lamp-app" | where Name startswith "store."`.
+
+**What was tried before this was built** (2026-10-25, a scratch resource group with the final rule, the pinned collector image and the app image in Docker, and a Grafana deployed from `grafana.bicep`): Azure accepts the data collection rule without any Application Insights reference; spans arrive in `OTelSpans` and `OTelResources`; metrics keep their dots and native-histogram shape; all 20 panel queries run; Grafana's workspace integration creates the Prometheus data source and its identity reads it; `az grafana dashboard create --overwrite` imports the dashboard. A span row bills about 635 bytes, so the 0.2 GB-a-day cap on the log workspace is about 315,000 spans a day, shared with the container logs. The Lamp API dashboard shows a "conflicting counter resets during histogram aggregation" warning on the panels that sum the delta histograms; the values are right (they add up to the requests sent).
+
+**What has not been seen on the cluster until a deploy shows it:** the collector's `azure_auth` extension signing in with the pod's workload identity and refreshing its token (the rehearsal used a one-hour token and lost data when it expired), the NetworkPolicies on Cilium, and Flux's `$$` escape for the collector's own `${env:...}` settings (verified with `flux build`, not on the cluster).
 
 In that workspace the metric names and labels keep their dots (`{"http.server.request.duration"}`), they are native histograms, and each export interval is stored as its own sample, so the dashboard sums them with `sum_over_time` instead of using `rate()`. Measured on this cluster, not documented by Microsoft: the per-interval samples added up to the number of traced requests (60), while `increase()` gave 18.
 
@@ -191,10 +197,10 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 - CPU and memory requests and limits on every pod defined here; two replicas; PodDisruptionBudgets; a `preStop` hook; readiness, liveness and startup probes; topology spread constraints
 - Pods run as non-root with no privilege escalation; network policies restrict traffic and block the node metadata endpoint
 - Image tags are commit hashes, never `latest`; base images are kept current by Dependabot
-- Managed Prometheus and Container Insights; the app's OpenTelemetry goes to Application Insights through AKS's own agent, and the preview features it needs are registered per Microsoft's article
+- Managed Prometheus and Container Insights; the app's OpenTelemetry goes through a collector that signs in with its own workload identity, to the data collection rule Microsoft documents for collectors
 - Flux with its default multi-tenancy lockdown
 
-**API versions.** Each resource uses the newest GA version that both Azure Resource Manager accepts (`az deployment sub validate` is the authority: it rejects versions the resource provider does not have) and the Bicep type data covers, so the compiler can still check the properties. Where the newest GA version has no type data yet (the dashboard, `2026-09-01`), the newest one is used and the compiler warns. Preview versions appear only where no GA version has what is needed (Application Insights with workspace ingestion, managed identities).
+**API versions.** Each resource uses the newest GA version that both Azure Resource Manager accepts (`az deployment sub validate` is the authority: it rejects versions the resource provider does not have) and the Bicep type data covers, so the compiler can still check the properties. Where the newest GA version has no type data yet (Managed Grafana, `2026-09-01`), the newest one that has it is used (`2025-08-01`), so the compiler can still check it. No resource uses a preview version.
 
 **Not followed, and why**
 
@@ -212,8 +218,8 @@ The setup was compared with Microsoft's AKS best-practice articles ([reliability
 | Private API server or authorized IP ranges | Public endpoint, Entra ID only | CI and your laptop reach it from changing addresses |
 | Control plane diagnostic settings (kube-audit and the other logs), and Defender for Containers | Neither | Not wanted for this environment: the log volume and per-vCPU price are not worth it for a practice cluster |
 | A NAT gateway for outbound traffic | The load balancer | $32/month |
-| Preview features are not for production workloads | AKS OTLP application monitoring, which Microsoft still labels preview | It is the only AKS-integrated way to send the app's own OpenTelemetry to Azure Monitor. Microsoft estimates the agent at about 0.5 vCPU and 250 MiB for the cluster. The cluster itself is on a GA API version (`2026-06-01`), which has the OTLP switches |
-| Microsoft documents creating the OTLP Application Insights resource in the portal only | `Microsoft.Insights/components@2025-01-23-preview` with `AzureMonitorWorkspaceIngestionMode: Enabled` | The properties come from the REST API specification, not from a Learn article |
+| Microsoft's recommended path for AKS applications is its OTLP application monitoring, through Application Insights | A collector in the cluster, writing to the data collection rule directly | That path is a preview (Microsoft: not for production), needs an Application Insights resource that creates a second pair of workspaces in a resource group of its own, and its agent takes about 0.5 vCPU and 250 MiB. Microsoft documents the collector path too ("Option 2: manual resource orchestration", and the Application Insights resource is optional), but the collector's `azure_auth` extension is beta and supported by the OpenTelemetry community, not Microsoft |
+| Azure Managed Grafana costs about $16 a month at 8 hours a day | Used anyway | It replaces the portal's preview "Dashboards with Grafana", which cost nothing extra. Microsoft deprecated the Essential tier and no new instance can have it, so Standard is the only choice |
 
 ## 🔁 Checked against Flux's and Microsoft's GitOps guidance
 

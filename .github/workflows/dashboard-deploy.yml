@@ -1,10 +1,15 @@
 name: Deploy dashboard
 
-# The Grafana dashboard is the part of the infrastructure that changes most, and it needs
-# nothing from the cluster, so it has a pipeline of its own: the whole Deploy workflow
+# The Grafana dashboards are the part of the infrastructure that changes most, and they need
+# nothing from the cluster, so they have a pipeline of their own: the whole Deploy workflow
 # (virtual network, PostgreSQL, the cluster and its Flux extension) takes about ten minutes.
 # Microsoft's guidance is one IaC pipeline per layer, aligned to how often its resources change:
 # https://learn.microsoft.com/azure/well-architected/operational-excellence/infrastructure-as-code-design
+#
+# Dashboards in Azure Managed Grafana are not Azure resources, so Bicep cannot deploy them: they go
+# in through Grafana's API, with `az grafana dashboard create` (from the amg extension). The Deploy
+# workflow starts this one once the infrastructure exists.
+# https://learn.microsoft.com/azure/managed-grafana/how-to-create-dashboard
 
 on:
   push:
@@ -22,7 +27,7 @@ env:
 
 jobs:
   dashboard:
-    name: Deploy the dashboard
+    name: Deploy the dashboards
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,8 +41,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Check the dashboard is valid JSON
-        run: python3 -m json.tool infra/dashboards/lamp-api.json > /dev/null
+      - name: Check the dashboards are valid JSON
+        run: for f in infra/dashboards/*.json; do python3 -m json.tool "$f" > /dev/null; done
 
       - name: Log in to Azure
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
@@ -46,19 +51,46 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Find the resource group
-        id: group
+      - name: Find Grafana
+        id: grafana
         run: |
-          if [ "$(az group exists --name "$RESOURCE_GROUP")" = true ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          name=$(az grafana list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv 2>/dev/null || true)
+          if [ -z "$name" ]; then
+            echo "::notice::There is no Grafana in $RESOURCE_GROUP: nothing to deploy to. Run the Deploy Azure Infrastructure workflow first."
           else
-            echo "::notice::There is no $RESOURCE_GROUP: nothing to deploy to. Run the Deploy Azure Infrastructure workflow first."
+            echo "name=$name" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Validate
-        if: steps.group.outputs.exists == 'true'
-        run: az deployment group validate --resource-group "$RESOURCE_GROUP" --template-file infra/dashboards/dashboard.bicep --only-show-errors --output none
+      # Importing takes the Grafana Admin role. This login holds User Access Administrator, so it
+      # grants itself the role. The assignee is its object ID, read from its own access token: a
+      # lookup by client ID would need permission to read Microsoft Entra ID, which it does not have.
+      - name: Let this login import dashboards
+        if: steps.grafana.outputs.name != ''
+        env:
+          GRAFANA: ${{ steps.grafana.outputs.name }}
+        run: |
+          oid=$(az account get-access-token --query accessToken --output tsv | python3 -c "
+          import base64, json, sys
+          t = sys.stdin.read().strip().split('.')[1]
+          print(json.loads(base64.urlsafe_b64decode(t + '=' * (-len(t) % 4)))['oid'])")
+          scope=$(az grafana show --resource-group "$RESOURCE_GROUP" --name "$GRAFANA" --query id --output tsv)
+          az role assignment create --assignee-object-id "$oid" --assignee-principal-type ServicePrincipal \
+            --role "Grafana Admin" --scope "$scope" --only-show-errors --output none
 
-      - name: Deploy
-        if: steps.group.outputs.exists == 'true'
-        run: az deployment group create --resource-group "$RESOURCE_GROUP" --name lamp-dashboard --template-file infra/dashboards/dashboard.bicep --only-show-errors --output none
+      # A new role assignment can take a few minutes to reach Grafana, so a refusal is retried
+      - name: Import the dashboards
+        if: steps.grafana.outputs.name != ''
+        env:
+          GRAFANA: ${{ steps.grafana.outputs.name }}
+        run: |
+          for f in infra/dashboards/*.json; do
+            jq '{dashboard: ., overwrite: true}' "$f" > "$RUNNER_TEMP/dashboard.json"
+            for attempt in $(seq 1 12); do
+              if az grafana dashboard create --resource-group "$RESOURCE_GROUP" --name "$GRAFANA" \
+                   --definition "@$RUNNER_TEMP/dashboard.json" --overwrite true --only-show-errors --output none; then
+                echo "Imported $f"; break
+              fi
+              [ "$attempt" = 12 ] && { echo "::error::Could not import $f after 12 attempts."; exit 1; }
+              echo "Attempt $attempt failed; waiting 30 seconds."; sleep 30
+            done
+          done

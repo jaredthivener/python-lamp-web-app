@@ -6,8 +6,9 @@
 // - Entra ID sign-in with Azure RBAC, local accounts disabled
 // - Azure CNI Overlay with the Cilium dataplane and network policy
 // - Workload identity, so pods reach Azure services without secrets
-// - Managed Prometheus for metrics, Container Insights for logs, and the OTLP agent
-//   for the app's own OpenTelemetry
+// - Managed Prometheus for metrics and Container Insights for logs. The app's own
+//   OpenTelemetry does not go through the cluster's agents: a collector in k8s/observability
+//   signs in with its own identity and posts to Azure Monitor
 // - The Flux extension, pointed at the manifest bundle CI publishes
 // =============================================================================
 
@@ -47,6 +48,15 @@ param appNamespace string
 @description('Kubernetes service account trusted to act as the app identity')
 param appServiceAccount string
 
+@description('Name of the managed identity the OpenTelemetry collector signs in to Azure Monitor with')
+param collectorIdentityName string
+
+@description('Kubernetes namespace of the service account trusted to act as the collector identity')
+param collectorNamespace string
+
+@description('Kubernetes service account trusted to act as the collector identity')
+param collectorServiceAccount string
+
 @description('Name of the virtual network the nodes join')
 param virtualNetworkName string
 
@@ -68,9 +78,6 @@ param logAnalyticsWorkspaceId string
 @description('Resource ID of the data collection rule for container logs')
 param containerInsightsRuleId string
 
-@description('Resource ID of the data collection rule Application Insights routes the app\'s OpenTelemetry with')
-param applicationInsightsRuleId string
-
 @description('Values substituted for the placeholders, written like \${LAMP_HOST}, in the manifests under k8s/app')
 @secure()
 param manifestValues object
@@ -87,6 +94,10 @@ resource clusterIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-
 
 resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: appIdentityName
+}
+
+resource collectorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
+  name: collectorIdentityName
 }
 
 resource fluxIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
@@ -131,9 +142,7 @@ resource publicIpRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 // =============================================================================
 // AKS Cluster
 // =============================================================================
-// 2026-06-01: the newest GA version the Bicep type data covers (2026-07-01 is out as well). It has the
-// OpenTelemetry (OTLP) switches under azureMonitorProfile.appMonitoring, which the 2026-05-01 version
-// lacked and the preview version used until now carried under the name openTelemetryLogs.
+// 2026-06-01: the newest GA version the Bicep type data covers (2026-07-01 is out as well).
 resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' = {
   name: clusterName
   location: location
@@ -253,23 +262,6 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' = {
       metrics: {
         enabled: true
       }
-      // Preview (Microsoft: not for production workloads). A node-local agent that takes
-      // the app's OTLP on a host port and forwards it to Application Insights, and a
-      // webhook that points pods in a namespace with an Instrumentation resource at it
-      // (k8s/app/lamp-app.yaml). Needs the two features registered on the subscription:
-      // Microsoft.ContainerService/AzureMonitorAppMonitoringPreview and
-      // Microsoft.Insights/OtlpApplicationInsights.
-      appMonitoring: {
-        autoInstrumentation: {
-          enabled: true
-        }
-        openTelemetryMetrics: {
-          enabled: true
-        }
-        openTelemetryLogsAndTraces: {
-          enabled: true
-        }
-      }
     }
 
     // Container Insights: the agent that ships container logs and Kubernetes events
@@ -356,6 +348,16 @@ resource appFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federat
   }
 }
 
+resource collectorFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
+  parent: collectorIdentity
+  name: clusterName
+  properties: {
+    issuer: aks.properties.oidcIssuerProfile.issuerURL
+    subject: 'system:serviceaccount:${collectorNamespace}:${collectorServiceAccount}'
+    audiences: ['api://AzureADTokenExchange']
+  }
+}
+
 resource fluxFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   parent: fluxIdentity
   name: clusterName
@@ -382,16 +384,6 @@ resource containerInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAsso
   scope: aks
   properties: {
     dataCollectionRuleId: containerInsightsRuleId
-  }
-}
-
-// Measured on the cluster: with only the two associations above, the OTLP agent never
-// listened (connections to its port were refused). This one gives it the pipeline.
-resource applicationInsightsAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2024-03-11' = {
-  name: 'ApplicationInsightsOtlp'
-  scope: aks
-  properties: {
-    dataCollectionRuleId: applicationInsightsRuleId
   }
 }
 
@@ -447,13 +439,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
         timeoutInSeconds: 600
         retryIntervalInSeconds: 120 // after a failure; the default waits ten minutes
       }
-      // The namespaces, then the Instrumentation resource, then the app. AKS's app-monitoring
-      // webhook reads the Instrumentation resource when it handles a Deployment being created
-      // or updated, and does nothing (failurePolicy Ignore) if there is none. Within one
-      // Kustomization Flux creates the Deployment first, so the first deploy ran without
-      // OpenTelemetry settings. Measured on Flux v2.9.6 and Kubernetes 1.36: Deployment
-      // before Instrumentation in one Kustomization, Instrumentation before Deployment with
-      // dependsOn. kustomize's sortOptions fifo does not change Flux's order.
+      // The namespaces first: everything below lives in them
       namespaces: {
         path: './namespaces'
         prune: true
@@ -461,22 +447,22 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
         timeoutInSeconds: 600
         retryIntervalInSeconds: 120
       }
-      instrumentation: {
-        path: './instrumentation'
+      // The OpenTelemetry collector the app sends its telemetry to. The app waits for it, so the
+      // first spans and metrics have somewhere to go.
+      observability: {
+        path: './observability'
         dependsOn: ['namespaces']
         prune: true
         wait: true
         timeoutInSeconds: 600
         retryIntervalInSeconds: 120
         postBuild: {
-          substitute: {
-            APPLICATIONINSIGHTS_CONNECTION_STRING: manifestValues.APPLICATIONINSIGHTS_CONNECTION_STRING
-          }
+          substitute: manifestValues
         }
       }
       app: {
         path: './app'
-        dependsOn: ['infrastructure', 'instrumentation']
+        dependsOn: ['infrastructure', 'observability']
         prune: true
         wait: true
         timeoutInSeconds: 600

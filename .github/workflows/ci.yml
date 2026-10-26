@@ -54,13 +54,19 @@ jobs:
           LAMP_HOST=lamp.example.com
           PUBLIC_IP_NAME=lamp-ip
           PUBLIC_IP_RESOURCE_GROUP=rg-lamp
-          APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=00000000-0000-0000-0000-000000000000
           APP_IDENTITY_CLIENT_ID=00000000-0000-0000-0000-000000000000
+          COLLECTOR_IDENTITY_CLIENT_ID=00000000-0000-0000-0000-000000000000
+          OTLP_RULE_IMMUTABLE_ID=dcr-00000000000000000000000000000000
+          OTLP_LOGS_ENDPOINT=https://lamp-otlp-dce-abcd.centralus-1.ingest.monitor.azure.com
+          OTLP_METRICS_ENDPOINT=https://lamp-otlp-dce-abcd.centralus-1.metrics.ingest.monitor.azure.com
           POSTGRES_CONNECTION_STRING=host=db.example.com dbname=lamp user=lamp-app sslmode=require
           EOF
           flux schema validate k8s --schema-location default --schema-location ecosystem \
-            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict \
-            --skip-kind monitor.azure.com/v1/Instrumentation # the AKS add-on's CRD has no published schema
+            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict
+          # The collector's configuration is not a Kubernetes object, so the schema check above cannot see
+          # it: the pinned collector image validates it instead (and a Dependabot bump of that image
+          # merges itself, so this is what stops one that no longer accepts the config)
+          .github/scripts/validate-collector.sh "$RUNNER_TEMP/values.env"
 
       # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite
@@ -257,18 +263,17 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-delay 10 --retry-all-errors "https://$HOST/health" \
             | tee /dev/stderr | grep -q '"database":"postgresql"'
 
-      # Telemetry is a preview feature, and whether this login may read the workspace has not been
-      # tried: a failure here is a warning, not a red build.
-      - name: Spans reach Application Insights
+      # Whether this login may read the workspace has not been tried: a failure here is a warning,
+      # not a red build. The collector in k8s/observability writes spans to the Log Analytics
+      # workspace (OTelSpans) through its own identity, so this also shows that identity works.
+      - name: Spans reach Log Analytics
         if: steps.target.outputs.running == 'true'
         continue-on-error: true
         env:
           HOST: ${{ steps.target.outputs.host }}
         run: |
           az config set extension.use_dynamic_install=yes_without_prompt extension.dynamic_install_allow_preview=true > /dev/null
-          component=$(az resource list --resource-group "$RESOURCE_GROUP" --resource-type Microsoft.Insights/components --query "[0].id" --output tsv)
-          workspace=$(az rest --method get --url "https://management.azure.com${component}?api-version=2025-01-23-preview" --query properties.WorkspaceResourceId --output tsv)
-          customer=$(az rest --method get --url "https://management.azure.com${workspace}?api-version=2025-02-01" --query properties.customerId --output tsv)
+          customer=$(az monitor log-analytics workspace list --resource-group "$RESOURCE_GROUP" --query "[?starts_with(name, 'lamp-logs')].customerId | [0]" --output tsv)
           for _ in $(seq 1 12); do
             for _ in $(seq 1 10); do curl --silent --output /dev/null "https://$HOST/api/v1/lamp/status"; done
             n=$(az monitor log-analytics query --workspace "$customer" --output tsv \
@@ -277,5 +282,5 @@ jobs:
             [ "${n:-0}" -gt 0 ] && exit 0
             sleep 30
           done
-          echo "::warning::No lamp-app spans reached Application Insights. If this is a fresh deploy, the pods need a restart to pick up the OTEL_* settings."
+          echo "::warning::No lamp-app spans reached Log Analytics. Check the collector: kubectl -n observability logs deploy/otel-gateway"
           exit 1
