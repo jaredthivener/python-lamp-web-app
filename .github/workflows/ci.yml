@@ -69,6 +69,11 @@ jobs:
           # merges itself, so this is what stops one that no longer accepts the config)
           .github/scripts/validate-collector.sh "$RUNNER_TEMP/values.env"
 
+      # A typo in a dashboard query is an empty panel on the cluster. This runs every expression in
+      # infra/dashboards (and the alert rules) through Prometheus's own parser.
+      - name: Check the dashboard queries parse
+        run: python3 .github/scripts/check-promql.py
+
       # uv takes the Python version from .python-version: the same minor as the production image
       - name: Run tests on SQLite
         run: uv run pytest

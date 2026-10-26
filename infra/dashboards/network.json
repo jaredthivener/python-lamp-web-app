@@ -1,0 +1,655 @@
+{
+  "uid": "k8s-network",
+  "title": "Kubernetes / Network (node and pod, without Cilium metrics)",
+  "tags": [
+    "kubernetes",
+    "network",
+    "cni"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "description": "Network health from node-exporter, the kernel's TCP counters and cAdvisor. The Cilium agent and Hubble metrics (drops by reason, policy verdicts, per-pod flows) need Advanced Container Networking Services, a paid add-on that is not enabled: see infra/README.md.",
+  "links": [
+    {
+      "type": "link",
+      "title": "Cluster health",
+      "url": "/d/k8s-cluster-health",
+      "icon": "external link",
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "DNS",
+      "url": "/d/k8s-dns",
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Node receive",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_network_receive_bytes_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Node transmit",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_network_transmit_bytes_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "TCP retransmit ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_netstat_Tcp_RetransSegs[$__rate_interval])) / sum(rate(node_netstat_Tcp_OutSegs[$__rate_interval]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.03
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Segments sent again because the first copy was lost or late. Above about 1% points at a congested or lossy path."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Dropped packets / s (nodes)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_network_receive_drop_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]) + rate(node_network_transmit_drop_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Interface errors / s (nodes)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_network_receive_errs_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]) + rate(node_network_transmit_errs_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Conntrack table used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(node_nf_conntrack_entries / node_nf_conntrack_entries_limit)",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "The kernel's connection-tracking table. Full means new connections are dropped. No data if the node does not use it."
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Node throughput by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance)(rate(node_network_receive_bytes_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "rx {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "-sum by (instance)(rate(node_network_transmit_bytes_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "tx {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "description": "Receive above zero, transmit below."
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "TCP retransmits and SYN retransmits",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance)(rate(node_netstat_Tcp_RetransSegs[$__rate_interval]))",
+          "legendFormat": "retrans {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance)(rate(node_netstat_TcpExt_TCPSynRetrans[$__rate_interval]))",
+          "legendFormat": "syn retrans {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Dropped packets by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance)(rate(node_network_receive_drop_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "rx {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance)(rate(node_network_transmit_drop_total{device!~\"lo|lxc.*|cilium.*|veth.*\"}[$__rate_interval]))",
+          "legendFormat": "tx {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Pod network receive by namespace",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace)(rate(container_network_receive_bytes_total[$__rate_interval]))",
+          "legendFormat": "{{namespace}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 30
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Pod network transmit by namespace",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace)(rate(container_network_transmit_bytes_total[$__rate_interval]))",
+          "legendFormat": "{{namespace}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 30
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Pod packet drops and errors by namespace",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace)(rate(container_network_receive_packets_dropped_total[$__rate_interval]))",
+          "legendFormat": "rx drop {{namespace}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (namespace)(rate(container_network_transmit_packets_dropped_total[$__rate_interval]))",
+          "legendFormat": "tx drop {{namespace}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (namespace)(rate(container_network_receive_errors_total[$__rate_interval]) + rate(container_network_transmit_errors_total[$__rate_interval]))",
+          "legendFormat": "errors {{namespace}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Conntrack entries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_nf_conntrack_entries",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "node_nf_conntrack_entries_limit",
+          "legendFormat": "limit {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
