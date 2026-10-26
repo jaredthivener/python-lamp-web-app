@@ -1,5 +1,5 @@
-# Extra scrape targets for Managed Prometheus: the public gateway's Envoy proxies, cert-manager and
-# the Flux controllers. A PodMonitor is the Prometheus Operator's resource under the API group the
+# Extra scrape targets for Managed Prometheus: the Cilium agents, the public gateway's Envoy proxies,
+# cert-manager and the Flux controllers. A PodMonitor is the Prometheus Operator's resource under the API group the
 # managed add-on watches (azmonitoring.coreos.com/v1), and the three limits are required there.
 # https://learn.microsoft.com/azure/azure-monitor/containers/prometheus-metrics-scrape-crd
 #
@@ -72,4 +72,30 @@ spec:
       metricRelabelings:
         - sourceLabels: [__name__]
           action: keep
-          regex: '(gotk_reconcile_duration_seconds_(bucket|sum|count)|gotk_suspend_status|controller_runtime_reconcile_(total|errors_total)|workqueue_depth)'
+          regex: '(gotk_reconcile_duration_seconds_(bucket|sum|count)|controller_runtime_reconcile_(total|errors_total)|workqueue_depth)'
+---
+# The Cilium agent's own metrics: AKS enables them (cilium-config: prometheus-serve-addr :9962) without
+# Advanced Container Networking Services. Only the per-node counters and gauges an operator reads are kept:
+# the agent exposes about 1,300 series, over 1,200 of them histograms of its internals. What ACNS adds
+# (Hubble: per-pod flows, DNS and drops) is not here.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cilium-agent
+  namespace: kube-system
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  namespaceSelector:
+    matchNames: [kube-system]
+  selector:
+    matchLabels:
+      k8s-app: cilium
+  podMetricsEndpoints:
+    - port: prometheus
+      interval: 30s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          action: keep
+          regex: 'cilium_(forward_(count|bytes)_total|drop_(count|bytes)_total|endpoint|endpoint_state|policy|policy_endpoint_enforcement_status|bpf_map_pressure|errors_warnings_total|unreachable_nodes|unreachable_health_endpoints|controllers_failing|identity|ip_addresses)'
