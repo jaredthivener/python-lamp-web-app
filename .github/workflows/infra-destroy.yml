@@ -84,6 +84,12 @@ jobs:
       - name: Delete resource group
         run: |
           group="rg-lamp-web-app-${{ env.AZURE_ENV_NAME }}"
+          # A second run, or one after the group was deleted by hand, has nothing to delete: that is
+          # a success, not the ResourceGroupNotFound error `az group delete` would fail with
+          if [ "$(az group exists --name "$group")" = "false" ]; then
+            echo "::notice::$group does not exist: nothing to delete."
+            exit 0
+          fi
           az group delete --name "$group" --yes --no-wait
           for _ in $(seq 1 120); do
             [ "$(az group exists --name "$group")" = "false" ] && exit 0
