@@ -9,6 +9,7 @@ targetScope = 'subscription'
 // - Network module: virtual network, private DNS for Postgres, the site's public IP
 // - Monitoring module: managed Prometheus for metrics, Container Insights for logs,
 //   and the app's own OpenTelemetry (a collector in the cluster writes to Azure Monitor)
+// - Alerts module: a Prometheus rule group on those metrics, mailing the owner
 // - Grafana module: Azure Managed Grafana over those workspaces, for the dashboards
 // - ACR module: registry for the app image and the Flux manifest bundle
 // - PostgreSQL module: private flexible server with Entra-only sign-in
@@ -42,6 +43,10 @@ param nodeCount int = 3
 
 @description('Object ID of the Entra user or group that administers the cluster with kubectl. Empty grants nobody.')
 param clusterAdminObjectId string = ''
+
+@description('Where alerts are emailed. Empty creates the alert rules without notifications. A secret in the deploy workflow, because this repository and its run logs are public.')
+@secure()
+param alertEmail string = ''
 
 
 
@@ -92,6 +97,18 @@ module monitoring 'modules/monitor/monitoring.bicep' = {
     tags: commonTags
     metricsReaderObjectId: clusterAdminObjectId
     otlpPublisherObjectId: collectorIdentity.outputs.principalId
+  }
+}
+
+module alerts 'modules/monitor/alerts.bicep' = {
+  name: 'alerts-deployment'
+  scope: resourceGroup
+  params: {
+    name: '${resourcePrefix}-${resourceToken}'
+    location: location
+    tags: commonTags
+    monitorWorkspaceId: monitoring.outputs.monitorWorkspaceId
+    alertEmail: alertEmail
   }
 }
 

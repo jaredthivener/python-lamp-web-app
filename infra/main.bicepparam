@@ -18,3 +18,6 @@ param resourceGroupName = 'rg-lamp-web-app-dev'
 // Left empty, nobody is granted access (an Owner can still assign the role later).
 param clusterAdminObjectId = readEnvironmentVariable('AKS_ADMIN_OBJECT_ID', '')
 
+// Where alerts are emailed: the repository secret of the same name (azd reads it from the environment). Left
+// empty, the alert rules are still created and still fire, and show in the portal under Alerts.
+param alertEmail = readEnvironmentVariable('ALERT_EMAIL', '')
