@@ -46,6 +46,7 @@ jobs:
       pull-requests: write # the preview comment
     env:
       AKS_ADMIN_OBJECT_ID: ${{ secrets.AKS_ADMIN_OBJECT_ID }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ github.token }}
     steps:

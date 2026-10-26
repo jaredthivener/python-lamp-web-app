@@ -28,6 +28,9 @@ env:
   # Who gets kubectl access. A secret, not a variable, only so that it is masked in
   # the run logs, which are public.
   AKS_ADMIN_OBJECT_ID: ${{ secrets.AKS_ADMIN_OBJECT_ID }}
+  # Where alerts are emailed. A secret for the same reason: this repository and its run logs are public.
+  # Optional: without it the alert rules exist and fire, and nobody is mailed.
+  ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
 
 jobs:
   deploy-infrastructure:

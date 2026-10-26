@@ -261,6 +261,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-06-01' = {
     azureMonitorProfile: {
       metrics: {
         enabled: true
+        // API server and etcd metrics, collected by AKS itself (not by the in-cluster agent): the
+        // targets and the metrics kept are set in k8s/monitoring. GA in this API version.
+        // https://learn.microsoft.com/azure/aks/control-plane-metrics-monitor
+        controlPlane: {
+          enabled: true
+        }
       }
     }
 
@@ -442,6 +448,15 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
       // The namespaces first: everything below lives in them
       namespaces: {
         path: './namespaces'
+        prune: true
+        wait: true
+        timeoutInSeconds: 600
+        retryIntervalInSeconds: 120
+      }
+      // What the cluster's Prometheus collects (the add-on's settings) and the extra targets: no
+      // placeholders and nothing waits for it, so it is independent of the others
+      monitoring: {
+        path: './monitoring'
         prune: true
         wait: true
         timeoutInSeconds: 600

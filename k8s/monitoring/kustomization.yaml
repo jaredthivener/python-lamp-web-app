@@ -1,0 +1,8 @@
+# What the cluster's Managed Prometheus collects (see infra/modules/compute/aks.bicep: the "monitoring"
+# Flux Kustomization). The PodMonitor resources need the add-on's CRDs, which exist from the
+# cluster's creation.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ama-metrics-settings.yaml
+  - podmonitors.yaml
