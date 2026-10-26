@@ -12,7 +12,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 
 # ponytail: pinned here, not in a Dockerfile, so Dependabot does not see it: bump it by hand with the
 # Prometheus release. Quoted metric names ({"http.server.request.duration"}) need Prometheus 3.
@@ -43,16 +42,17 @@ if alerts.exists():
     for name, expr in re.findall(r"alert: '([^']+)'\s+expression: '((?:[^'\\]|\\.|'')*)'", alerts.read_text()):
         rules.append((f"alerts.bicep: {name}", expr.replace("''", "'")))
 
-with tempfile.TemporaryDirectory(dir=root / "scratch" if (root / "scratch").is_dir() else None) as work:
-    lines = ["groups:", "  - name: check", "    rules:"]
-    for index, (_, expr) in enumerate(rules):
-        lines += [f"      - record: check:{index}", f"        expr: {json.dumps(expr)}"]
-    pathlib.Path(work, "rules.yaml").write_text("\n".join(lines) + "\n")
-    result = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{work}:/work:ro", "--entrypoint", "promtool", PROMETHEUS, "check", "rules", "/work/rules.yaml"],
-        capture_output=True,
-        text=True,
-    )
+lines = ["groups:", "  - name: check", "    rules:"]
+for index, (_, expr) in enumerate(rules):
+    lines += [f"      - record: check:{index}", f"        expr: {json.dumps(expr)}"]
+# Over stdin, not a mounted file: the container runs as an unprivileged user, and a temporary
+# directory on a CI runner is private to the user that made it (it was "permission denied" there).
+result = subprocess.run(
+    ["docker", "run", "--rm", "-i", "--entrypoint", "promtool", PROMETHEUS, "check", "rules", "/dev/stdin"],
+    input="\n".join(lines) + "\n",
+    capture_output=True,
+    text=True,
+)
 
 print(f"{len(rules)} expressions checked")
 if result.returncode:
