@@ -1,0 +1,75 @@
+# Extra scrape targets for Managed Prometheus: the public gateway's Envoy proxies, cert-manager and
+# the Flux controllers. A PodMonitor is the Prometheus Operator's resource under the API group the
+# managed add-on watches (azmonitoring.coreos.com/v1), and the three limits are required there.
+# https://learn.microsoft.com/azure/azure-monitor/containers/prometheus-metrics-scrape-crd
+#
+# They live in kube-system and reach the pods across namespaces with namespaceSelector. A target is
+# only a pod that has the named port, so a selector that matches more pods than intended is harmless.
+# Only the metrics the dashboards and alerts use are kept: Envoy alone exports thousands of series.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-gateway-proxy
+  namespace: kube-system
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  namespaceSelector:
+    matchNames: [envoy-gateway-system]
+  # The proxy pods, not the controller: its port is also called "metrics", but it serves /metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+      app.kubernetes.io/component: proxy
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          action: keep
+          regex: 'envoy_(http_downstream_(rq_total|rq_xx|rq_time_bucket|rq_time_sum|rq_time_count|cx_active|cx_total)|cluster_upstream_(rq_xx|rq_time_bucket|rq_time_sum|rq_time_count|cx_connect_fail|rq_timeout)|cluster_membership_(healthy|total)|server_(live|uptime))'
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  namespaceSelector:
+    matchNames: [cert-manager]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+  podMetricsEndpoints:
+    - port: http-metrics
+      interval: 60s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          action: keep
+          regex: 'certmanager_(certificate_(ready_status|expiration_timestamp_seconds|renewal_timestamp_seconds)|http_acme_client_request_count|controller_sync_call_count)'
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux
+  namespace: kube-system
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  namespaceSelector:
+    matchNames: [flux-system]
+  # Every pod there; only the ones with the "http-prom" port (Flux's controllers, port 8080) are scraped
+  selector: {}
+  podMetricsEndpoints:
+    - port: http-prom
+      interval: 60s
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          action: keep
+          regex: '(gotk_reconcile_duration_seconds_(bucket|sum|count)|gotk_suspend_status|controller_runtime_reconcile_(total|errors_total)|workqueue_depth)'

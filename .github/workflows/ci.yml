@@ -62,7 +62,8 @@ jobs:
           POSTGRES_CONNECTION_STRING=host=db.example.com dbname=lamp user=lamp-app sslmode=require
           EOF
           flux schema validate k8s --schema-location default --schema-location ecosystem \
-            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict
+            --envsubst-file "$RUNNER_TEMP/values.env" --envsubst-strict \
+            --skip-kind azmonitoring.coreos.com/v1/PodMonitor # the managed Prometheus add-on's CRD has no published schema
           # The collector's configuration is not a Kubernetes object, so the schema check above cannot see
           # it: the pinned collector image validates it instead (and a Dependabot bump of that image
           # merges itself, so this is what stops one that no longer accepts the config)
