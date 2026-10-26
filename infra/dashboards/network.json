@@ -1,6 +1,6 @@
 {
   "uid": "k8s-network",
-  "title": "Kubernetes / Network (node and pod, without Cilium metrics)",
+  "title": "Kubernetes / Network (node and pod)",
   "tags": [
     "kubernetes",
     "network",
@@ -14,7 +14,7 @@
     "to": "now"
   },
   "refresh": "1m",
-  "description": "Network health from node-exporter, the kernel's TCP counters and cAdvisor. The Cilium agent and Hubble metrics (drops by reason, policy verdicts, per-pod flows) need Advanced Container Networking Services, a paid add-on that is not enabled: see infra/README.md.",
+  "description": "Network health from node-exporter, the kernel's TCP counters and cAdvisor. The Cilium agent's own metrics are on the Cilium dashboard; Hubble's per-pod flows, DNS and drops need Advanced Container Networking Services, a paid add-on that is not enabled: see infra/README.md.",
   "links": [
     {
       "type": "link",
@@ -27,6 +27,13 @@
       "type": "link",
       "title": "DNS",
       "url": "/d/k8s-dns",
+      "icon": "external link",
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Cilium",
+      "url": "/d/k8s-cilium",
       "icon": "external link",
       "targetBlank": false
     }
@@ -185,7 +192,7 @@
         },
         "overrides": []
       },
-      "description": "Segments sent again because the first copy was lost or late. Above about 1% points at a congested or lossy path."
+      "description": "Share of sent TCP segments that were retransmissions (node_netstat_Tcp_RetransSegs over Tcp_OutSegs). The 1% and 3% colour thresholds are rules of thumb chosen here, not a documented limit."
     },
     {
       "id": 4,

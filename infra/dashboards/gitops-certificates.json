@@ -130,17 +130,67 @@
               },
               {
                 "color": "green",
-                "value": 21
+                "value": 14
               }
             ]
           }
         },
         "overrides": []
       },
-      "description": "cert-manager renews a Let's Encrypt certificate about 30 days before it expires, so this normally stays above 29."
+      "description": "Days until the nearest certificate expires. cert-manager schedules renewal 2/3 of the way through a certificate's lifetime by default (https://cert-manager.io/docs/usage/certificate/#renewal), so a 90-day certificate is renewed with about 30 days left."
     },
     {
       "id": 3,
+      "type": "stat",
+      "title": "Soonest renewal (days)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(min(certmanager_certificate_renewal_timestamp_seconds) - time()) / 86400",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Days until cert-manager next attempts a renewal (the Certificate's status.renewalTime). Negative means a renewal is overdue."
+    },
+    {
+      "id": 4,
       "type": "stat",
       "title": "Flux reconcile errors (range)",
       "datasource": {
@@ -148,7 +198,7 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 8,
+        "x": 12,
         "y": 0,
         "w": 4,
         "h": 4
@@ -191,56 +241,6 @@
         },
         "overrides": []
       }
-    },
-    {
-      "id": 4,
-      "type": "stat",
-      "title": "Suspended Flux objects",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${ds}"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(gotk_suspend_status == 1) or vector(0)",
-          "legendFormat": "",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${ds}"
-          },
-          "interval": "1m"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Something paused on purpose: Flux applies nothing for it until it is resumed."
     },
     {
       "id": 5,
@@ -354,7 +354,7 @@
         {
           "refId": "A",
           "expr": "(certmanager_certificate_expiration_timestamp_seconds - time()) / 86400",
-          "legendFormat": "{{namespace}}/{{name}}",
+          "legendFormat": "{{exported_namespace}}/{{name}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"

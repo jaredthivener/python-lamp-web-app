@@ -98,7 +98,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(coredns_dns_responses_total{rcode=~\"SERVFAIL|REFUSED\"}[$__rate_interval])) / sum(rate(coredns_dns_responses_total[$__rate_interval]))",
+          "expr": "(sum(rate(coredns_dns_responses_total{rcode=~\"SERVFAIL|REFUSED\"}[$__rate_interval])) or vector(0)) / sum(rate(coredns_dns_responses_total[$__rate_interval]))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -508,7 +508,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Upstream (forward) latency p95",
+      "title": "Upstream latency percentiles",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -522,8 +522,28 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le)(rate(coredns_forward_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le)(rate(coredns_proxy_request_duration_seconds_bucket{proxy_name=\"forward\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le)(rate(coredns_proxy_request_duration_seconds_bucket{proxy_name=\"forward\"}[$__rate_interval])))",
           "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le)(rate(coredns_proxy_request_duration_seconds_bucket{proxy_name=\"forward\"}[$__rate_interval])))",
+          "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds}"
@@ -537,12 +557,12 @@
         },
         "overrides": []
       },
-      "description": "Time CoreDNS waits for the upstream resolver on a cache miss for an outside name."
+      "description": "Time CoreDNS waits for its upstream resolver on a cache miss; on this cluster the upstream is 168.63.129.16, Azure's virtual DNS address (the `to` label). CoreDNS 1.14 exposes these as coredns_proxy_*: the coredns_forward_* request metrics listed in Microsoft's default-targets article are not exposed by the running pods."
     },
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Upstream (forward) responses by code",
+      "title": "Upstream responses by code",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -556,7 +576,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (rcode)(rate(coredns_forward_responses_total[$__rate_interval]))",
+          "expr": "sum by (rcode)(rate(coredns_proxy_request_duration_seconds_count{proxy_name=\"forward\"}[$__rate_interval]))",
           "legendFormat": "{{rcode}}",
           "datasource": {
             "type": "prometheus",
@@ -581,13 +601,57 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Queries per CoreDNS instance",
+      "title": "Upstream connection cache hits and misses",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
       },
       "gridPos": {
         "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(coredns_proxy_conn_cache_hits_total[$__rate_interval]))",
+          "legendFormat": "hits",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(coredns_proxy_conn_cache_misses_total[$__rate_interval]))",
+          "legendFormat": "misses",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "description": "Reused connections to the upstream resolver against new ones."
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Queries per CoreDNS instance",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
         "y": 28,
         "w": 12,
         "h": 8

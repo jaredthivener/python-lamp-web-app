@@ -53,6 +53,13 @@
     },
     {
       "type": "link",
+      "title": "Cilium",
+      "url": "/d/k8s-cilium",
+      "icon": "external link",
+      "targetBlank": false
+    },
+    {
+      "type": "link",
       "title": "Control plane",
       "url": "/d/k8s-control-plane",
       "icon": "external link",
@@ -334,7 +341,7 @@
         },
         "overrides": []
       },
-      "description": "Containers whose most recent termination was out-of-memory. It stays until the container is replaced."
+      "description": "Containers whose last termination reason was OOMKilled (kube_pod_container_status_last_terminated_reason). kube-state-metrics reports the last reason for as long as the container status holds it, so it can outlast the incident."
     },
     {
       "id": 6,
@@ -437,7 +444,7 @@
         },
         "overrides": []
       },
-      "description": "A PodDisruptionBudget at zero blocks a node drain (an upgrade or a scale-down would wait)."
+      "description": "A PodDisruptionBudget with zero disruptions allowed makes the Eviction API answer 429 Too Many Requests, so a node drain (an upgrade, a scale-down) waits on that pod. https://kubernetes.io/docs/concepts/scheduling-eviction/api-eviction/"
     },
     {
       "id": 8,
@@ -491,7 +498,7 @@
         },
         "overrides": []
       },
-      "description": "How much of the nodes' CPU the pods have reserved. Past about 85% the scheduler starts refusing pods."
+      "description": "Sum of containers' CPU requests over the nodes' allocatable CPU. The scheduler places a pod only on a node with enough unreserved allocatable CPU, so a pod can stay Pending before this reaches 100% (each node is full on its own). The colour thresholds (80% and 90%) are rules of thumb chosen here."
     },
     {
       "id": 9,
@@ -679,7 +686,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_load1 / count by (instance)(node_cpu_seconds_total{mode=\"idle\"})",
+          "expr": "node_load1 / on (instance) count by (instance)(node_cpu_seconds_total{mode=\"idle\"})",
           "legendFormat": "{{instance}}",
           "datasource": {
             "type": "prometheus",
@@ -694,7 +701,7 @@
         },
         "overrides": []
       },
-      "description": "USE method, saturation: runnable work queued per core. Above 1 means work is waiting for a CPU."
+      "description": "USE method, saturation: the 1-minute load average per core. On Linux the load average counts runnable tasks and tasks in uninterruptible sleep (disk wait), so sustained values above 1 mean work is queued, for CPU or for I/O. http://www.brendangregg.com/usemethod.html"
     },
     {
       "id": 14,
@@ -875,7 +882,7 @@
     {
       "id": 18,
       "type": "table",
-      "title": "Containers waiting, and why",
+      "title": "Containers waiting, and why (last 5 minutes)",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -889,7 +896,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (namespace, pod, container, reason)(kube_pod_container_status_waiting_reason == 1)",
+          "expr": "sum by (namespace, pod, container, reason)(max_over_time(kube_pod_container_status_waiting_reason[5m]) == 1)",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -920,7 +927,7 @@
         },
         "overrides": []
       },
-      "description": "CrashLoopBackOff, ImagePullBackOff, CreateContainerConfigError and the like. Empty is healthy."
+      "description": "Containers kube-state-metrics reported as waiting (CrashLoopBackOff, ImagePullBackOff and the like) at any point in the last 5 minutes. The plain series flickers in and out while a container restarts (measured: present at 20 of 30 one-minute instants for a pod that had crash looped for half an hour), so an instant query misses it. Empty is healthy."
     },
     {
       "id": 19,
