@@ -1,13 +1,15 @@
 // =============================================================================
-// Monitoring Module (managed Prometheus + Container Insights logs)
+// Monitoring Module (managed Prometheus, Container Insights logs, the app's OpenTelemetry)
 // =============================================================================
 // Microsoft's recommended pairing for AKS:
-// - Metrics: an Azure Monitor workspace holds the cluster's Prometheus metrics.
-//   Browse them in the portal: the cluster's Monitor > Dashboards with Grafana.
+// - Metrics: an Azure Monitor workspace holds the cluster's Prometheus metrics and the
+//   app's OpenTelemetry metrics, all queried with PromQL (in Grafana: grafana.bicep).
 // - Logs: a Log Analytics workspace holds container logs, Kubernetes events and the
-//   pod inventory (the "Logs and events" profile). Query them with KQL from the
-//   cluster's Monitor > Logs.
-// Each has a collection rule telling the cluster's agents what to send where.
+//   pod inventory (the "Logs and events" profile), and the app's OpenTelemetry spans
+//   (OTelSpans). Query them with KQL.
+// Each has a collection rule telling the cluster's agents what to send where. The app's
+// OpenTelemetry arrives through a third one, which the collector in k8s/observability
+// writes to directly.
 // =============================================================================
 
 @description('The name of the Azure Monitor workspace')
@@ -15,9 +17,6 @@ param monitorWorkspaceName string
 
 @description('The name of the Log Analytics workspace')
 param logAnalyticsWorkspaceName string
-
-@description('The name of the Application Insights resource that receives the app\'s OpenTelemetry')
-param applicationInsightsName string
 
 @description('Most log data, in GB, the workspace accepts in a day. Collection pauses until the next day once it is reached.')
 param dailyLogCapGb string = '0.2'
@@ -30,6 +29,9 @@ param tags object = {}
 
 @description('Object ID of a user or group allowed to query the metrics. Empty grants nobody.')
 param metricsReaderObjectId string = ''
+
+@description('Object ID of the identity the OpenTelemetry collector signs in to Azure Monitor with')
+param otlpPublisherObjectId string
 
 resource monitorWorkspace 'Microsoft.Monitor/accounts@2025-10-03' = {
   name: monitorWorkspaceName
@@ -148,22 +150,97 @@ resource containerInsightsRule 'Microsoft.Insights/dataCollectionRules@2024-03-1
 // =============================================================================
 // Application telemetry: what the app itself sends over OpenTelemetry (OTLP)
 // =============================================================================
-// Application Insights with OTLP support and managed workspaces: Azure creates the
-// workspace that stores the metrics, and the rule that routes them, in a resource group
-// of its own (as the portal's "Use managed workspaces: Yes" does). The cluster's agents
-// accept the app's OTLP and forward it here. Microsoft documents this only in the
-// portal; the properties are from the 2025-01-23-preview API specification.
-// Metrics land in a Prometheus store, so Grafana queries them with PromQL.
-resource applicationInsights 'Microsoft.Insights/components@2025-01-23-preview' = {
-  name: applicationInsightsName
+// The collector in k8s/observability posts OTLP/HTTP to this endpoint and rule, signed in with
+// its workload identity: metrics go to the Azure Monitor workspace above, spans and logs to the
+// Log Analytics workspace. Microsoft documents it as "Option 2: manual resource orchestration":
+// https://learn.microsoft.com/azure/azure-monitor/containers/opentelemetry-protocol-ingestion
+// Its sample rule also names an Application Insights resource, which is only there for that
+// resource's own views; nothing here uses them, so the references are left out (tried on
+// 2026-10-25: Azure accepts the rule, and spans, resources and metrics arrive).
+resource otlpEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2024-03-11' = {
+  name: '${monitorWorkspaceName}-otlp'
   location: location
   tags: tags
-  kind: 'web'
   properties: {
-    Application_Type: 'web'
-    Flow_Type: 'Bluefield'
-    Request_Source: 'rest'
-    AzureMonitorWorkspaceIngestionMode: 'Enabled'
+    networkAcls: {
+      publicNetworkAccess: 'Enabled'
+    }
+  }
+}
+
+resource otlpRule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
+  name: '${monitorWorkspaceName}-otlp'
+  location: location
+  tags: tags
+  properties: {
+    dataCollectionEndpointId: otlpEndpoint.id
+    directDataSources: {
+      otelMetrics: [
+        {
+          name: 'otelMetrics'
+          streams: ['Custom-Metrics-Otel']
+          enrichWithResourceAttributes: ['*']
+        }
+      ]
+      otelLogs: [
+        {
+          name: 'otelLogs'
+          streams: ['Microsoft-OTel-Logs']
+          enrichWithResourceAttributes: ['*']
+        }
+      ]
+      otelTraces: [
+        {
+          name: 'otelTraces'
+          streams: [
+            'Microsoft-OTel-Traces-Spans'
+            'Microsoft-OTel-Traces-Events'
+            'Microsoft-OTel-Traces-Resources'
+          ]
+          enrichWithResourceAttributes: ['*']
+        }
+      ]
+    }
+    destinations: {
+      monitoringAccounts: [
+        {
+          name: 'metrics'
+          accountResourceId: monitorWorkspace.id
+        }
+      ]
+      logAnalytics: [
+        {
+          name: 'logs'
+          workspaceResourceId: logAnalyticsWorkspace.id
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: ['Custom-Metrics-Otel']
+        destinations: ['metrics']
+      }
+      {
+        streams: [
+          'Microsoft-OTel-Logs'
+          'Microsoft-OTel-Traces-Spans'
+          'Microsoft-OTel-Traces-Events'
+          'Microsoft-OTel-Traces-Resources'
+        ]
+        destinations: ['logs']
+      }
+    ]
+  }
+}
+
+// What lets the collector write to the rule, and to nothing else
+resource otlpPublisherRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(otlpRule.id, otlpPublisherObjectId, 'Monitoring Metrics Publisher')
+  scope: otlpRule
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb') // Monitoring Metrics Publisher
+    principalId: otlpPublisherObjectId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -192,9 +269,17 @@ output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 @description('The resource ID of the Container Insights data collection rule')
 output containerInsightsRuleId string = containerInsightsRule.id
 
-@description('The rule Azure created to route the app\'s OpenTelemetry. The cluster has to be associated with it, or its agent never starts listening for OTLP.')
-output applicationInsightsRuleId string = applicationInsights.properties.DataCollectionRuleResourceId
+@description('The resource ID of the Azure Monitor workspace')
+output monitorWorkspaceId string = monitorWorkspace.id
 
-@description('Where the app\'s OpenTelemetry is sent. Not a secret on its own, but it identifies the resource.')
-@secure()
-output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString
+@description('The name of the Log Analytics workspace')
+output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
+
+@description('The immutable ID of the OTLP data collection rule, which goes in the collector\'s endpoint paths')
+output otlpRuleImmutableId string = otlpRule.properties.immutableId
+
+@description('The address the collector sends spans and logs to (the endpoint\'s log ingestion address)')
+output otlpLogsEndpoint string = otlpEndpoint.properties.logsIngestion.endpoint
+
+@description('The address the collector sends metrics to (the endpoint\'s metrics ingestion address)')
+output otlpMetricsEndpoint string = otlpEndpoint.properties.metricsIngestion.endpoint

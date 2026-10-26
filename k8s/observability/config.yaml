@@ -1,0 +1,51 @@
+# The collector's configuration (otel-gateway.yaml mounts it). Validated with `otelcol-contrib validate`.
+# Metrics must be delta temporality with exponential histograms, which the app is told to send
+# (lamp-app.yaml); Azure Monitor's own dashboards and this repository's Grafana dashboard expect that.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Refuse data before the container is killed for memory: the app retries, and a restart loses more
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 100
+    spike_limit_mib: 25
+  batch:
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  azure_auth:
+    workload_identity:
+      client_id: $${env:AZURE_CLIENT_ID}
+      tenant_id: $${env:AZURE_TENANT_ID}
+      federated_token_file: $${env:AZURE_FEDERATED_TOKEN_FILE}
+    scopes:
+      - https://monitor.azure.com/.default
+
+exporters:
+  otlphttp/azuremonitor:
+    traces_endpoint: ${OTLP_LOGS_ENDPOINT}/datacollectionRules/${OTLP_RULE_IMMUTABLE_ID}/streams/Microsoft-OTLP-Traces/otlp/v1/traces
+    logs_endpoint: ${OTLP_LOGS_ENDPOINT}/datacollectionRules/${OTLP_RULE_IMMUTABLE_ID}/streams/Microsoft-OTLP-Logs/otlp/v1/logs
+    metrics_endpoint: ${OTLP_METRICS_ENDPOINT}/datacollectionRules/${OTLP_RULE_IMMUTABLE_ID}/streams/Custom-Metrics-Otel/otlp/v1/metrics
+    auth:
+      authenticator: azure_auth
+
+service:
+  extensions: [health_check, azure_auth]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/azuremonitor]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/azuremonitor]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/azuremonitor]

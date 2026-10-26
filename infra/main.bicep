@@ -8,7 +8,7 @@ targetScope = 'subscription'
 // Architecture:
 // - Network module: virtual network, private DNS for Postgres, the site's public IP
 // - Monitoring module: managed Prometheus for metrics, Container Insights for logs,
-//   Application Insights for the app's own OpenTelemetry
+//   and the app's own OpenTelemetry (a collector in the cluster writes to Azure Monitor)
 // - ACR module: registry for the app image and the Flux manifest bundle
 // - PostgreSQL module: private flexible server with Entra-only sign-in
 // - AKS module: the cluster, its identities, and the Flux (GitOps) configuration
@@ -59,6 +59,8 @@ var commonTags = {
 // Kubernetes names the identities are trusted for. k8s/ has to use the same ones.
 var appNamespace = 'lamp'
 var appServiceAccount = 'lamp-app'
+var collectorNamespace = 'observability'
+var collectorServiceAccount = 'otel-gateway'
 var postgresDatabaseName = 'lamp'
 
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
@@ -85,14 +87,14 @@ module monitoring 'modules/monitor/monitoring.bicep' = {
   params: {
     monitorWorkspaceName: '${resourcePrefix}-metrics-${resourceToken}'
     logAnalyticsWorkspaceName: '${resourcePrefix}-logs-${resourceToken}'
-    applicationInsightsName: '${resourcePrefix}-appinsights-${resourceToken}'
     location: location
     tags: commonTags
     metricsReaderObjectId: clusterAdminObjectId
+    otlpPublisherObjectId: collectorIdentity.outputs.principalId
   }
 }
 
-// Three identities, one job each. None of them has a secret to leak.
+// Four identities, one job each. None of them has a secret to leak.
 module clusterIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {
   name: 'cluster-identity-deployment'
   scope: resourceGroup
@@ -108,6 +110,16 @@ module appIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
   scope: resourceGroup
   params: {
     name: '${resourcePrefix}-app-${resourceToken}' // the lamp pods: signing in to Postgres
+    location: location
+    tags: commonTags
+  }
+}
+
+module collectorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {
+  name: 'collector-identity-deployment'
+  scope: resourceGroup
+  params: {
+    name: '${resourcePrefix}-otel-${resourceToken}' // the OpenTelemetry collector: writing telemetry to Azure Monitor
     location: location
     tags: commonTags
   }
@@ -208,9 +220,12 @@ module aks 'modules/compute/aks.bicep' = {
     clusterAdminObjectId: clusterAdminObjectId
     clusterIdentityName: clusterIdentity.outputs.name
     appIdentityName: appIdentity.outputs.name
+    collectorIdentityName: collectorIdentity.outputs.name
     fluxIdentityName: fluxIdentity.outputs.name
     appNamespace: appNamespace
     appServiceAccount: appServiceAccount
+    collectorNamespace: collectorNamespace
+    collectorServiceAccount: collectorServiceAccount
     virtualNetworkName: network.outputs.virtualNetworkName
     nodeSubnetId: network.outputs.nodeSubnetId
     publicIpName: network.outputs.publicIpName
@@ -218,14 +233,16 @@ module aks 'modules/compute/aks.bicep' = {
     prometheusRuleId: monitoring.outputs.prometheusRuleId
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     containerInsightsRuleId: monitoring.outputs.containerInsightsRuleId
-    applicationInsightsRuleId: monitoring.outputs.applicationInsightsRuleId
     // Everything the manifests in k8s/ need to know about this deployment
     manifestValues: {
       LAMP_HOST: network.outputs.hostName
       PUBLIC_IP_NAME: network.outputs.publicIpName
       PUBLIC_IP_RESOURCE_GROUP: resourceGroupName
       APP_IDENTITY_CLIENT_ID: appIdentity.outputs.clientId
-      APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+      COLLECTOR_IDENTITY_CLIENT_ID: collectorIdentity.outputs.clientId
+      OTLP_RULE_IMMUTABLE_ID: monitoring.outputs.otlpRuleImmutableId
+      OTLP_LOGS_ENDPOINT: monitoring.outputs.otlpLogsEndpoint
+      OTLP_METRICS_ENDPOINT: monitoring.outputs.otlpMetricsEndpoint
       POSTGRES_CONNECTION_STRING: 'host=${postgresDatabase.outputs.fqdn!} dbname=${postgresDatabaseName} user=${appIdentity.outputs.name} sslmode=require'
     }
   }

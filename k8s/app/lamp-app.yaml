@@ -74,13 +74,37 @@ spec:
             - name: POSTGRES_CONNECTION_STRING
               value: "${POSTGRES_CONNECTION_STRING}"
             # FastAPI's native OpenTelemetry (https://fastapi.tiangolo.com/advanced/opentelemetry/,
-            # "Other monitoring services"). FASTAPI_OTEL_AUTO_CONFIGURE turns on the exporters;
-            # the endpoint comes from AKS, which sets OTEL_EXPORTER_OTLP_* on pods in a namespace
-            # with an Instrumentation resource (see the one at the end of this file).
+            # "Other monitoring services"). FASTAPI_OTEL_AUTO_CONFIGURE turns on the exporters, and
+            # the OTEL_* settings below (the SDK's own, documented at opentelemetry.io) point them at
+            # the collector in k8s/observability, which has the Azure credentials and the destination.
             - name: FASTAPI_OTEL_AUTO_CONFIGURE
               value: "true"
             - name: OTEL_SERVICE_NAME
               value: lamp-app
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-gateway.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf # Azure Monitor takes binary protobuf, not JSON
+            # Azure Monitor's dashboards, and this repository's, expect delta metrics with
+            # exponential histograms (the settings the AKS agent used to inject)
+            - name: OTEL_METRICS_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+              value: delta
+            - name: OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION
+              value: base2_exponential_bucket_histogram
+            # Each export is one sample per series, and the dashboard sums them over windows as
+            # short as 15 seconds, so the SDK's default of 60 seconds would leave gaps
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "15000"
+            # The pod's name, so the dashboard can tell the replicas apart. An env var is
+            # expanded in the ones listed after it, hence the order.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.namespace.name=lamp,k8s.pod.name=$(POD_NAME)
             # Only the gateway can reach these pods (see the NetworkPolicy below), so its
             # X-Forwarded-For header is trusted for the visitor's address.
             - name: FORWARDED_ALLOW_IPS
@@ -191,6 +215,16 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    # The OpenTelemetry collector (k8s/observability), named by selector for the same reason
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-gateway
+      ports:
+        - port: 4318
     # Everything outside the cluster (Postgres, Entra ID) except the metadata endpoint
     - to:
         - ipBlock:

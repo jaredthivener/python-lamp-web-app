@@ -1,0 +1,179 @@
+# The OpenTelemetry collector the app sends its traces, metrics and logs to, run as a "gateway":
+# one small deployment that every app pod posts OTLP/HTTP to, which batches the telemetry and
+# forwards it to Azure Monitor with its own identity. The app needs no Azure credentials for
+# telemetry, and the destination is a setting here, not in the app.
+#
+# Azure Monitor receives it through the data collection rule in infra/modules/monitor/monitoring.bicep:
+# metrics into the Azure Monitor workspace (PromQL), spans and logs into Log Analytics (KQL).
+# https://learn.microsoft.com/azure/azure-monitor/containers/opentelemetry-protocol-ingestion
+#
+# Sign-in is Microsoft Entra Workload ID, as for the app (see lamp-app.yaml): the annotation names
+# a managed identity that holds the Monitoring Metrics Publisher role on that rule only, and
+# AKS's webhook supplies AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_FEDERATED_TOKEN_FILE, which
+# the collector's azure_auth extension reads. The extension is beta and community-supported
+# (Microsoft supports the Azure side).
+#
+# Flux fills ${NAME} from manifestValues in infra/main.bicep. The collector's own ${env:NAME} must
+# reach it untouched, so it is written $${env:NAME} here: Flux turns $$ into $.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-gateway
+  namespace: observability
+  annotations:
+    azure.workload.identity/client-id: ${COLLECTOR_IDENTITY_CLIENT_ID}
+automountServiceAccountToken: false # the collector never calls the Kubernetes API
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-gateway
+  namespace: observability
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: otel-gateway
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: otel-gateway
+        azure.workload.identity/use: "true" # the webhook only handles pods with this label
+    spec:
+      serviceAccountName: otel-gateway
+      # Preferred, not required: a collector that cannot spread still collects. The app's
+      # priority class is not used here because it is defined in k8s/app, which waits for this.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: otel-gateway
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: otel-gateway
+          # The contrib distribution, because azure_auth is only in it. Pinned by digest (the tag is
+          # 0.163.2); Trivy found no HIGH or CRITICAL finding in it on 2026-10-25. A new version is
+          # a change to this line and to the config below: the azure_auth syntax changed in 0.148.
+          image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+          args: ["--config=/conf/config.yaml"]
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+          startupProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi # the memory_limiter in the config starts refusing data at 100 MiB
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001 # the image's own user, written out so Kubernetes can verify it
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: otel-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-gateway
+  namespace: observability
+spec:
+  selector:
+    app: otel-gateway
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: otel-gateway
+  namespace: observability
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: otel-gateway
+---
+# Only the app's pods may send to it, and it may reach DNS and the internet (Entra ID and the
+# Azure Monitor endpoints, over HTTPS) but not the node's metadata endpoint. Under Cilium an address
+# range never matches other pods, so the app is named by selector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-gateway
+  namespace: observability
+spec:
+  podSelector:
+    matchLabels:
+      app: otel-gateway
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lamp
+          podSelector:
+            matchLabels:
+              app: lamp-app
+      ports:
+        - port: otlp-http
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - port: 443

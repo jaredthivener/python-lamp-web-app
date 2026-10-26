@@ -27,3 +27,14 @@ metadata:
     pod-security.kubernetes.io/enforce: restricted
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+---
+# observability: the OpenTelemetry collector the app's telemetry goes through
+# (k8s/observability).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
