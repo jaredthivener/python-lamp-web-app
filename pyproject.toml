@@ -25,7 +25,7 @@ dependencies = [
     "uvicorn[standard]==0.54.0",
     "pydantic==2.14.2",
     # store.py puts a span on each database call; FastAPI[standard] already installs it
-    "opentelemetry-api==1.45.1",
+    "opentelemetry-api==1.45.2",
     # Database dependencies
     "sqlalchemy==2.1.6",
     "psycopg2-binary==2.9.13",
