@@ -30,7 +30,7 @@ dependencies = [
     "sqlalchemy==2.1.6",
     "psycopg2-binary==2.9.13",
     # Signs in to Azure Postgres as the pod's identity, so there is no password to keep
-    "azure-identity==1.26.0",
+    "azure-identity==1.27.0",
 ]
 
 # PEP 735 dependency groups (top-level, not under [project])
