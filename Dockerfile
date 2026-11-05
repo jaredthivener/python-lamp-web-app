@@ -72,7 +72,7 @@ RUN mkdir -p /rootfs/var/lib/dpkg/status.d \
 # systemd, perl or login. "cc" is the variant with libgcc and libstdc++, which the Rust wheels
 # (cryptography, pydantic-core) load. Like the Python image above, its version and digest are
 # written out so Dependabot proposes newer ones.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
 
 # OCI Metadata
 LABEL org.opencontainers.image.title="Python LAMP Web App" \
