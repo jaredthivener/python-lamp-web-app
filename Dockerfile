@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------
 # The version and digest are written out in each FROM line rather than passed through an ARG,
 # which Dependabot cannot read: with an ARG here it never proposes a newer Python.
-FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS builder
+FROM python:3.15.2-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 # Environment setup for clean, fast, reproducible builds
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -36,7 +36,7 @@ RUN mkdir -p /deps \
 # ------------------------------------------------------------------------
 # Still the official Python image, so the interpreter is the one Python ships. Nothing here is
 # shipped except what the production stage copies out of /usr/local and /rootfs.
-FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS runtime
+FROM python:3.15.2-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS runtime
 
 # The system libraries the interpreter's extension modules load that the production base does not
 # have (it has libc, libssl, zlib, zstd, libgcc and libstdc++), and tini. No libpq: psycopg2-binary
